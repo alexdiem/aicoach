@@ -6,7 +6,6 @@ const api = axios.create({
   timeout: 30000,
 })
 
-// Store athlete_id in sessionStorage after OAuth
 export function getAthleteId(): number | null {
   const id = sessionStorage.getItem('athlete_id')
   return id ? parseInt(id) : null
@@ -14,6 +13,11 @@ export function getAthleteId(): number | null {
 
 export function setAthleteId(id: number) {
   sessionStorage.setItem('athlete_id', String(id))
+}
+
+export async function connectGarmin(): Promise<{ athlete_id: number; display_name: string }> {
+  const r = await api.post('/auth/connect')
+  return r.data
 }
 
 export async function getAthlete(athleteId: number): Promise<Athlete> {
@@ -73,9 +77,4 @@ export async function uploadRoute(athleteId: number, name: string, file: File): 
 
 export async function deleteRoute(routeId: number, athleteId: number): Promise<void> {
   await api.delete(`/routes/${routeId}`, { params: { athlete_id: athleteId } })
-}
-
-export async function getAuthStatus(athleteId: number) {
-  const r = await api.get('/auth/status', { params: { athlete_id: athleteId } })
-  return r.data
 }

@@ -11,20 +11,15 @@ Personal cross-sport training planner for cycling, running, and XC skiing. Pulls
 
 ## Setup
 
-### 1. Get Garmin Health API credentials
+### 1. Configure credentials
 
-1. Go to [developer.garmin.com/health-api](https://developer.garmin.com/health-api) and sign in
-2. Create an app — you'll receive a **Consumer Key** and **Consumer Secret**
-3. Set your OAuth callback URL to `http://localhost:8000/auth/callback`
-4. Optionally register a webhook URL for real-time activity push: `https://your-domain/garmin/webhook`
-
-### 2. Configure environment
+No developer account or API approval needed. Uses the [`python-garminconnect`](https://github.com/cyberjunky/python-garminconnect) library, which authenticates with the same SSO flow as the Garmin Connect mobile app.
 
 ```bash
 cp backend/.env.example backend/.env
 # Edit backend/.env and fill in:
-# GARMIN_CLIENT_ID=your-consumer-key
-# GARMIN_CLIENT_SECRET=your-consumer-secret
+# GARMIN_EMAIL=your.email@example.com
+# GARMIN_PASSWORD=your-garmin-connect-password
 # ANTHROPIC_API_KEY=sk-ant-... (optional, for AI coaching)
 # SECRET_KEY=$(openssl rand -hex 32)
 ```
@@ -57,11 +52,11 @@ npm run dev
 
 ## First-time flow
 
-1. Open the app → click **Connect Garmin Account**
-2. Authorize the app on Garmin's OAuth page
-3. You'll be redirected back. Go to **Settings** and:
+1. Set `GARMIN_EMAIL` and `GARMIN_PASSWORD` in `backend/.env`
+2. Open the app → click **Connect Garmin Account** (validates credentials, creates your athlete profile)
+3. Go to **Settings**:
    - Set your FTP (watts) and LTHR (bpm)
-   - Click **Sync last 60 days** to pull your history
+   - Click **Sync last 6 months** to build a proper CTL history
 4. Go to **Routes** and upload your GPX files
 5. Go to **Plan** and click **Generate Plan**
 

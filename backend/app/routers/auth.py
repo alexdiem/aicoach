@@ -1,74 +1,62 @@
 """
-Garmin OAuth 1.0a three-legged flow.
-/auth/login → Garmin authorize page → /auth/callback → store tokens → redirect to frontend
+Authentication via python-garminconnect (username + password stored in .env).
+No OAuth flow needed — the library handles Garmin's SSO internally.
+The "connect" endpoint just validates credentials and creates/returns the athlete record.
 """
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.models.athlete import Athlete, GarminToken
-from app.services.garmin import (
-    exchange_for_access_token,
-    get_authorization_url,
-    get_request_token,
-    GarminClient,
-)
+from app.models.athlete import Athlete
+from app.services.garmin import get_garmin_client
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# In-memory temp storage for request token secrets (production: use Redis/DB)
-_pending_tokens: dict[str, str] = {}
 
+@router.post("/connect")
+async def connect(db: AsyncSession = Depends(get_db)):
+    """
+    Validate Garmin credentials from .env and create/return the athlete record.
+    Call this once after setting GARMIN_EMAIL and GARMIN_PASSWORD in .env.
+    """
+    if not settings.GARMIN_EMAIL or not settings.GARMIN_PASSWORD:
+        raise HTTPException(
+            status_code=400,
+            detail="GARMIN_EMAIL and GARMIN_PASSWORD must be set in your .env file.",
+        )
 
-@router.get("/login")
-async def login():
-    """Redirect user to Garmin OAuth authorization page."""
+    garmin = get_garmin_client()
+
     try:
-        token_data = await get_request_token()
-        oauth_token = token_data["oauth_token"]
-        oauth_token_secret = token_data["oauth_token_secret"]
-        _pending_tokens[oauth_token] = oauth_token_secret
-        auth_url = get_authorization_url(oauth_token)
-        return RedirectResponse(url=auth_url)
+        profile = await garmin.get_user_profile()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to initiate Garmin OAuth: {e}")
+        raise HTTPException(status_code=401, detail=f"Garmin login failed: {e}. Check your credentials in .env.")
 
+    garmin_user_id = str(
+        profile.get("userId")
+        or profile.get("userProfileId")
+        or profile.get("displayName", "unknown")
+    )
+    display_name = (
+        profile.get("displayName")
+        or profile.get("fullName")
+        or profile.get("userName")
+        or "Athlete"
+    )
 
-@router.get("/callback")
-async def callback(
-    oauth_token: str,
-    oauth_verifier: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """Handle Garmin OAuth callback, store tokens, redirect to frontend."""
-    oauth_token_secret = _pending_tokens.pop(oauth_token, None)
-    if not oauth_token_secret:
-        raise HTTPException(status_code=400, detail="Invalid or expired OAuth token.")
-
+    # Fetch VO2max if available
+    vo2max_cycling = None
+    vo2max_running = None
     try:
-        access_data = await exchange_for_access_token(oauth_token, oauth_token_secret, oauth_verifier)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Token exchange failed: {e}")
-
-    access_token = access_data["oauth_token"]
-    access_token_secret = access_data["oauth_token_secret"]
-
-    # Fetch user ID from Garmin
-    try:
-        garmin = GarminClient(access_token, access_token_secret)
-        metrics = await garmin.get_user_metrics()
-        garmin_user_id = str(metrics.get("userId") or metrics.get("userProfilePK") or access_token[:16])
-        display_name = metrics.get("displayName") or "Athlete"
-        vo2max_running = metrics.get("vo2MaxRunning")
-        vo2max_cycling = metrics.get("vo2MaxCycling")
+        metrics = await garmin.get_max_metrics()
+        if metrics:
+            vo2max_cycling = metrics.get("vo2MaxPreciseValue") or metrics.get("vo2MaxValue")
+            vo2max_running = metrics.get("vo2MaxPreciseValue") or metrics.get("vo2MaxValue")
     except Exception:
-        garmin_user_id = access_token[:16]
-        display_name = "Athlete"
-        vo2max_running = None
-        vo2max_cycling = None
+        pass
 
     # Upsert athlete
     result = await db.execute(select(Athlete).where(Athlete.garmin_user_id == garmin_user_id))
@@ -81,35 +69,29 @@ async def callback(
             vo2max_cycling=vo2max_cycling,
         )
         db.add(athlete)
-        await db.flush()
-
-    # Upsert token
-    result = await db.execute(select(GarminToken).where(GarminToken.athlete_id == athlete.id))
-    token_record = result.scalar_one_or_none()
-    if token_record:
-        token_record.access_token = access_token
-        token_record.access_token_secret = access_token_secret
     else:
-        token_record = GarminToken(
-            athlete_id=athlete.id,
-            access_token=access_token,
-            access_token_secret=access_token_secret,
-        )
-        db.add(token_record)
+        if display_name:
+            athlete.display_name = display_name
 
-    return RedirectResponse(url=f"{settings.FRONTEND_URL}?connected=true&athlete_id={athlete.id}")
+    await db.flush()
+
+    return {
+        "connected": True,
+        "athlete_id": athlete.id,
+        "display_name": athlete.display_name,
+        "garmin_user_id": garmin_user_id,
+    }
 
 
 @router.get("/status")
 async def auth_status(athlete_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(Athlete).where(Athlete.id == athlete_id)
-    )
+    result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
     athlete = result.scalar_one_or_none()
     if not athlete:
         return {"connected": False}
+    credentials_set = bool(settings.GARMIN_EMAIL and settings.GARMIN_PASSWORD)
     return {
-        "connected": True,
+        "connected": credentials_set,
         "athlete_id": athlete.id,
         "display_name": athlete.display_name,
         "ftp_watts": athlete.ftp_watts,
