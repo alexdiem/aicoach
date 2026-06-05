@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.activity import Activity
-from app.models.athlete import Athlete, GarminToken
+from app.models.athlete import Athlete
 from app.models.plan import PlannedWorkout, WeeklyPlan
 from app.models.route import Route
 from app.services import ai_coach
