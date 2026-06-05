@@ -49,8 +49,21 @@ export async function getCurrentPlan(athleteId: number): Promise<WeeklyPlan | nu
   return r.data
 }
 
-export async function generatePlan(athleteId: number): Promise<{ plan_id: number; narrative: string }> {
-  const r = await api.post('/plan/generate', null, { params: { athlete_id: athleteId } })
+export interface DayPreference {
+  day_of_week: number
+  is_rest: boolean
+  preferred_sport: string | null
+}
+
+export async function generatePlan(
+  athleteId: number,
+  schedule: DayPreference[] = [],
+): Promise<{ plan_id: number; narrative: string }> {
+  const r = await api.post(
+    '/plan/generate',
+    { athlete_schedule: schedule, fun_activities: [] },
+    { params: { athlete_id: athleteId } },
+  )
   return r.data
 }
 
