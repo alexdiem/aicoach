@@ -7,13 +7,11 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
-from app.services.season_detector import get_primary_sports
 from app.services.terrain import match_route_to_workout
 
 if TYPE_CHECKING:
     from app.models.activity import Activity
     from app.models.athlete import Athlete
-    from app.models.plan import WeeklyPlan, PlannedWorkout
     from app.models.route import Route
 
 # Volume targets by CTL range (hours/week)
@@ -258,11 +256,11 @@ def _apply_athlete_schedule(
 
         if dow in result:
             existing = result[dow]
-            workout_type = existing["type"]
+            workout_type = existing["workout_type"]
 
             # Strength stays strength regardless of sport swap (can't do VO2max as "STRENGTH")
             if preferred == "STRENGTH":
-                result[dow] = {**existing, "sport": "STRENGTH", "type": "STRENGTH", "zone": None,
+                result[dow] = {**existing, "sport": "STRENGTH", "workout_type": "STRENGTH", "intensity_zone": None,
                                "purpose": "Strength session — adjusted to your schedule preference."}
             else:
                 swapped_purpose = _SPORT_SWAP_PURPOSES.get(
@@ -274,14 +272,20 @@ def _apply_athlete_schedule(
             # No template workout on this day — insert a filler
             filler = _FILLER_WORKOUTS.get(preferred)
             if filler:
-                # Downgrade intensity in recovery phase
+                filler_type = filler["type"]
+                filler_duration = filler["duration"]
                 if phase == "RECOVERY":
-                    filler = {**filler, "type": "RECOVERY" if filler["type"] != "STRENGTH" else "STRENGTH",
-                              "duration": max(30, filler["duration"] - 15)}
+                    filler_type = "RECOVERY" if filler_type != "STRENGTH" else "STRENGTH"
+                    filler_duration = max(30, filler_duration - 15)
                 result[dow] = {
                     "day_of_week": dow,
                     "sport": preferred,
-                    **filler,
+                    "workout_type": filler_type,
+                    "duration_minutes": filler_duration,
+                    "intensity_zone": filler["zone"],
+                    "purpose": filler["purpose"],
+                    "suggested_route_id": None,
+                    "terrain_notes": None,
                 }
 
     # Re-sort by day
@@ -349,16 +353,12 @@ def generate_weekly_plan_data(
         })
 
     # Apply athlete schedule constraints
-    constrained = _apply_athlete_schedule(
-        [{**w, "type": w["workout_type"]} for w in raw_workouts],
-        athlete_schedule or [],
-        phase,
-    )
+    constrained = _apply_athlete_schedule(raw_workouts, athlete_schedule or [], phase)
 
     # Terrain matching + finalize
     workouts = []
     for w in constrained:
-        workout_type = w.get("workout_type") or w.get("type", "EASY")
+        workout_type = w["workout_type"]
         sport = w["sport"]
         duration = w["duration_minutes"]
 

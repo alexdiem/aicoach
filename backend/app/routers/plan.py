@@ -1,11 +1,12 @@
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.dependencies import get_athlete_or_404
 from app.models.activity import Activity
 from app.models.athlete import Athlete
 from app.models.plan import PlannedWorkout, WeeklyPlan
@@ -26,9 +27,12 @@ class DayPreference(BaseModel):
         description="CYCLING, RUNNING, XC_SKIING, or STRENGTH. None means no preference.",
     )
 
-    def model_post_init(self, __context) -> None:
-        if self.preferred_sport and self.preferred_sport not in VALID_SPORTS:
+    @field_validator("preferred_sport")
+    @classmethod
+    def validate_preferred_sport(cls, v: str | None) -> str | None:
+        if v and v not in VALID_SPORTS:
             raise ValueError(f"preferred_sport must be one of {VALID_SPORTS}")
+        return v
 
 
 VALID_PHASES = {"BASE", "BUILD", "PEAK", "RECOVERY"}
@@ -46,26 +50,23 @@ class GeneratePlanRequest(BaseModel):
                     "If omitted the phase is auto-detected from CTL, TSB, and the 4-week block.",
     )
 
-    def model_post_init(self, __context) -> None:
-        if self.phase_override and self.phase_override not in VALID_PHASES:
+    @field_validator("phase_override")
+    @classmethod
+    def validate_phase_override(cls, v: str | None) -> str | None:
+        if v and v not in VALID_PHASES:
             raise ValueError(f"phase_override must be one of {VALID_PHASES}")
-
-
-async def _get_athlete_or_404(athlete_id: int, db: AsyncSession) -> Athlete:
-    result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
-    athlete = result.scalar_one_or_none()
-    if not athlete:
-        raise HTTPException(status_code=404, detail="Athlete not found.")
-    return athlete
+        return v
 
 
 @router.post("/generate")
 async def generate_plan(
-    athlete_id: int,
-    body: GeneratePlanRequest = GeneratePlanRequest(),
+    body: GeneratePlanRequest = None,
+    athlete: Athlete = Depends(get_athlete_or_404),
     db: AsyncSession = Depends(get_db),
 ):
-    athlete = await _get_athlete_or_404(athlete_id, db)
+    if body is None:
+        body = GeneratePlanRequest()
+    athlete_id = athlete.id
 
     cutoff = date.today() - timedelta(days=90)
     acts_result = await db.execute(
@@ -173,12 +174,10 @@ async def get_plan_history(
 @router.put("/workouts/{workout_id}/complete")
 async def mark_workout_complete(
     workout_id: int,
-    athlete_id: int,
     activity_id: int | None = None,
+    athlete: Athlete = Depends(get_athlete_or_404),
     db: AsyncSession = Depends(get_db),
 ):
-    athlete = await _get_athlete_or_404(athlete_id, db)
-
     result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
     workout = result.scalar_one_or_none()
     if not workout:

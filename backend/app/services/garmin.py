@@ -9,8 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, timedelta
-from functools import lru_cache
+from datetime import date, datetime
 
 from garminconnect import Garmin, GarminConnectAuthenticationError
 
@@ -40,7 +39,7 @@ def _make_client() -> Garmin:
 
 def _run_sync(fn, *args, **kwargs):
     """Run a blocking garminconnect call in a thread pool to keep FastAPI async."""
-    return asyncio.get_event_loop().run_in_executor(None, lambda: fn(*args, **kwargs))
+    return asyncio.get_running_loop().run_in_executor(None, lambda: fn(*args, **kwargs))
 
 
 class GarminClient:
@@ -57,7 +56,6 @@ class GarminClient:
     async def get_activities(self, start_date: date, end_date: date) -> list[dict]:
         """Fetch all activities in a date range."""
         client = self._get()
-        days = (end_date - start_date).days + 1
 
         def _fetch():
             # The library fetches by start offset + limit; we use a large limit

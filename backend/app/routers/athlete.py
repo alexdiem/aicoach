@@ -1,11 +1,12 @@
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.dependencies import get_athlete_or_404
 from app.models.activity import Activity
 from app.models.athlete import Athlete
 from app.services.fitness import (
@@ -26,11 +27,7 @@ class AthleteUpdate(BaseModel):
 
 
 @router.get("/{athlete_id}")
-async def get_athlete(athlete_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
-    athlete = result.scalar_one_or_none()
-    if not athlete:
-        raise HTTPException(status_code=404, detail="Athlete not found.")
+async def get_athlete(athlete: Athlete = Depends(get_athlete_or_404)):
     return {
         "id": athlete.id,
         "display_name": athlete.display_name,
@@ -42,11 +39,7 @@ async def get_athlete(athlete_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/{athlete_id}")
-async def update_athlete(athlete_id: int, update: AthleteUpdate, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
-    athlete = result.scalar_one_or_none()
-    if not athlete:
-        raise HTTPException(status_code=404, detail="Athlete not found.")
+async def update_athlete(update: AthleteUpdate, athlete: Athlete = Depends(get_athlete_or_404)):
     if update.display_name is not None:
         athlete.display_name = update.display_name
     if update.ftp_watts is not None:
@@ -58,20 +51,15 @@ async def update_athlete(athlete_id: int, update: AthleteUpdate, db: AsyncSessio
 
 @router.get("/{athlete_id}/fitness")
 async def get_fitness_metrics(
-    athlete_id: int,
     days: int = 90,
+    athlete: Athlete = Depends(get_athlete_or_404),
     db: AsyncSession = Depends(get_db),
 ):
     """Return CTL/ATL/TSB time series and cross-sport transfer breakdown."""
-    result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
-    athlete = result.scalar_one_or_none()
-    if not athlete:
-        raise HTTPException(status_code=404, detail="Athlete not found.")
-
     cutoff = date.today() - timedelta(days=max(days, 90))
     acts_result = await db.execute(
         select(Activity)
-        .where(Activity.athlete_id == athlete_id, Activity.start_time >= cutoff)
+        .where(Activity.athlete_id == athlete.id, Activity.start_time >= cutoff)
         .order_by(Activity.start_time)
     )
     activities = list(acts_result.scalars().all())

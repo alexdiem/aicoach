@@ -4,7 +4,6 @@ No OAuth flow needed — the library handles Garmin's SSO internally.
 The "connect" endpoint just validates credentials and creates/returns the athlete record.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

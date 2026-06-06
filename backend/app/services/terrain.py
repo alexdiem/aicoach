@@ -19,6 +19,15 @@ CLIMB_MIN_LENGTH_M = 100
 SMOOTHING_WINDOW = 5  # points
 
 
+def _smooth(arr: list[float], w: int) -> list[float]:
+    result = []
+    for i in range(len(arr)):
+        lo = max(0, i - w // 2)
+        hi = min(len(arr), i + w // 2 + 1)
+        result.append(sum(arr[lo:hi]) / (hi - lo))
+    return result
+
+
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Distance between two GPS points in meters."""
     R = 6371000
@@ -71,16 +80,7 @@ def analyze_gpx(gpx_content: str) -> dict:
         grad = (ele_diff / d * 100) if d > 1 else 0.0
         gradients.append(grad)
 
-    # Smooth gradients
-    def smooth(arr: list[float], w: int) -> list[float]:
-        result = []
-        for i in range(len(arr)):
-            lo = max(0, i - w // 2)
-            hi = min(len(arr), i + w // 2 + 1)
-            result.append(sum(arr[lo:hi]) / (hi - lo))
-        return result
-
-    smoothed = smooth(gradients, SMOOTHING_WINDOW)
+    smoothed = _smooth(gradients, SMOOTHING_WINDOW)
 
     # Identify climb segments: consecutive points above threshold
     climb_segments = []
@@ -218,7 +218,7 @@ def _score_route(
     segments = analysis.get("segments", [])
     terrain_type = analysis.get("terrain_type", "UNKNOWN")
 
-    if target_intensity in ("VO2MAX",):
+    if target_intensity == "VO2MAX":
         # Want SHORT_PUNCH or MEDIUM_CLIMB segments matching interval duration
         # Prefer routes where segments can be repeated
         matching = [
