@@ -11,16 +11,16 @@ const SPORT_ICONS: Record<string, string> = {
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 const TYPE_STYLES: Record<string, { dot: string; badge: string }> = {
-  EASY:      { dot: 'bg-emerald-500', badge: 'bg-emerald-950 text-emerald-400 border-emerald-900' },
-  RECOVERY:  { dot: 'bg-zinc-500',    badge: 'bg-zinc-800 text-zinc-400 border-zinc-700' },
-  TEMPO:     { dot: 'bg-yellow-500',  badge: 'bg-yellow-950 text-yellow-400 border-yellow-900' },
-  THRESHOLD: { dot: 'bg-orange-500',  badge: 'bg-orange-950 text-orange-400 border-orange-900' },
-  VO2MAX:    { dot: 'bg-rose-500',    badge: 'bg-rose-950 text-rose-400 border-rose-900' },
-  LONG:      { dot: 'bg-blue-500',    badge: 'bg-blue-950 text-blue-400 border-blue-900' },
-  STRENGTH:  { dot: 'bg-violet-500',  badge: 'bg-violet-950 text-violet-400 border-violet-900' },
+  EASY:      { dot: 'bg-emerald-500', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  RECOVERY:  { dot: 'bg-gray-400',    badge: 'bg-gray-100 text-gray-500 border-gray-200' },
+  TEMPO:     { dot: 'bg-yellow-500',  badge: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+  THRESHOLD: { dot: 'bg-orange-500',  badge: 'bg-orange-100 text-orange-700 border-orange-200' },
+  VO2MAX:    { dot: 'bg-rose-500',    badge: 'bg-rose-100 text-rose-700 border-rose-200' },
+  LONG:      { dot: 'bg-blue-500',    badge: 'bg-blue-100 text-blue-700 border-blue-200' },
+  STRENGTH:  { dot: 'bg-violet-500',  badge: 'bg-violet-100 text-violet-700 border-violet-200' },
 }
 
-const fallbackStyle = { dot: 'bg-zinc-600', badge: 'bg-zinc-800 text-zinc-400 border-zinc-700' }
+const fallbackStyle = { dot: 'bg-gray-400', badge: 'bg-gray-100 text-gray-500 border-gray-200' }
 
 interface Props {
   workout: PlannedWorkout
@@ -38,17 +38,17 @@ export default function WorkoutCard({ workout, isToday, onMarkComplete }: Props)
       className={clsx(
         'rounded-2xl p-4 border flex flex-col gap-3 min-w-[156px] max-w-[180px] transition-all',
         isToday
-          ? 'bg-zinc-900 border-blue-500/60 shadow-[0_0_0_1px_rgba(59,130,246,0.15)]'
-          : 'bg-zinc-900 border-zinc-800',
+          ? 'bg-indigo-50 border-indigo-300'
+          : 'bg-white border-gray-200',
         workout.is_completed && 'opacity-50',
       )}
     >
       <div className="flex items-center justify-between">
-        <span className={clsx('text-xs font-semibold uppercase tracking-wider', isToday ? 'text-blue-400' : 'text-zinc-500')}>
+        <span className={clsx('text-xs font-semibold uppercase tracking-wider', isToday ? 'text-indigo-600' : 'text-gray-400')}>
           {isToday ? 'Today' : dayLabel}
         </span>
         {workout.is_completed && (
-          <span className="text-emerald-400 text-xs font-semibold">✓ Done</span>
+          <span className="text-emerald-600 text-xs font-semibold">✓ Done</span>
         )}
       </div>
 
@@ -62,18 +62,18 @@ export default function WorkoutCard({ workout, isToday, onMarkComplete }: Props)
       </div>
 
       <div>
-        <p className="text-sm font-bold text-white">
+        <p className="text-sm font-bold text-gray-900">
           {workout.duration_minutes}
-          <span className="text-zinc-400 font-normal text-xs ml-1">min</span>
+          <span className="text-gray-400 font-normal text-xs ml-1">min</span>
           {workout.intensity_zone && (
-            <span className="text-zinc-500 font-normal text-xs ml-1.5">{workout.intensity_zone}</span>
+            <span className="text-gray-400 font-normal text-xs ml-1.5">{workout.intensity_zone}</span>
           )}
         </p>
-        <p className="text-xs text-zinc-500 mt-1 line-clamp-2 leading-relaxed">{workout.purpose}</p>
+        <p className="text-xs text-gray-500 mt-1 line-clamp-2 leading-relaxed">{workout.purpose}</p>
       </div>
 
       {workout.terrain_notes && (
-        <p className="text-xs text-amber-400/80 line-clamp-1">⛰ {workout.terrain_notes.slice(0, 60)}</p>
+        <p className="text-xs text-amber-600/80 line-clamp-1">⛰ {workout.terrain_notes.slice(0, 60)}</p>
       )}
 
       {workout.compliance_score !== null && (
@@ -83,22 +83,22 @@ export default function WorkoutCard({ workout, isToday, onMarkComplete }: Props)
             className={clsx(
               'text-xs font-semibold',
               workout.compliance_score >= 80
-                ? 'text-emerald-400'
+                ? 'text-emerald-600'
                 : workout.compliance_score >= 60
-                  ? 'text-yellow-400'
-                  : 'text-rose-400',
+                  ? 'text-yellow-600'
+                  : 'text-rose-600',
             )}
           >
             {workout.compliance_score}%
           </span>
-          <span className="text-zinc-600 text-xs">compliance</span>
+          <span className="text-gray-400 text-xs">compliance</span>
         </div>
       )}
 
       {!workout.is_completed && onMarkComplete && (
         <button
           onClick={() => onMarkComplete(workout)}
-          className="text-xs text-blue-400 hover:text-blue-300 transition-colors font-medium text-left"
+          className="text-xs text-indigo-600 hover:text-indigo-800 transition-colors font-medium text-left"
         >
           Mark complete →
         </button>
