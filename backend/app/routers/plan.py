@@ -15,6 +15,7 @@ from app.services import ai_coach
 from app.services.fitness import calculate_ctl_atl_tsb, calculate_daily_loads
 from app.services.plan_generator import generate_weekly_plan_data, VALID_SPORTS
 from app.services.season_detector import detect_season
+from app.services.workout_builder import build_structured_session
 
 router = APIRouter(prefix="/plan", tags=["plan"])
 
@@ -120,7 +121,18 @@ async def generate_plan(
     await db.flush()
 
     for w in plan_data["workouts"]:
-        workout = PlannedWorkout(plan_id=plan.id, **w)
+        matched_route = None
+        if w.get("suggested_route_id"):
+            matched_route = next((r for r in routes if r.id == w["suggested_route_id"]), None)
+        structured = build_structured_session(
+            workout_type=w["workout_type"],
+            duration_minutes=w["duration_minutes"],
+            sport=w["sport"],
+            athlete_ftp=athlete.ftp_watts,
+            athlete_lthr=athlete.lthr,
+            route=matched_route,
+        )
+        workout = PlannedWorkout(plan_id=plan.id, structured_session=structured, **w)
         db.add(workout)
 
     await db.flush()
@@ -197,6 +209,41 @@ async def mark_workout_complete(
     return {"workout_id": workout_id, "completed": True, "compliance_score": workout.compliance_score}
 
 
+@router.post("/workouts/{workout_id}/structure")
+async def build_workout_structure(
+    workout_id: int,
+    route_id: int | None = None,
+    athlete: Athlete = Depends(get_athlete_or_404),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rebuild (or build for the first time) the structured session for a workout, optionally using a specific route."""
+    result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
+    workout = result.scalar_one_or_none()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found.")
+
+    route = None
+    if route_id:
+        route_result = await db.execute(
+            select(Route).where(Route.id == route_id, Route.athlete_id == athlete.id)
+        )
+        route = route_result.scalar_one_or_none()
+
+    structured = build_structured_session(
+        workout_type=workout.workout_type,
+        duration_minutes=workout.duration_minutes,
+        sport=workout.sport,
+        athlete_ftp=athlete.ftp_watts,
+        athlete_lthr=athlete.lthr,
+        route=route,
+    )
+    workout.structured_session = structured
+    if route_id:
+        workout.suggested_route_id = route_id
+
+    return structured
+
+
 @router.patch("/workouts/{workout_id}/unstructured")
 async def set_workout_unstructured(
     workout_id: int,
@@ -237,6 +284,7 @@ async def _serialize_plan(plan: WeeklyPlan, db: AsyncSession) -> dict:
                 "terrain_notes": w.terrain_notes,
                 "is_completed": w.is_completed,
                 "is_unstructured": w.is_unstructured,
+                "structured_session": w.structured_session,
                 "compliance_score": w.compliance_score,
                 "ai_compliance_notes": w.ai_compliance_notes,
             }

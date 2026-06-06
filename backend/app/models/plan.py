@@ -1,5 +1,5 @@
 from datetime import datetime, date
-from sqlalchemy import String, Float, DateTime, Date, ForeignKey, Integer, Boolean, Text
+from sqlalchemy import String, Float, DateTime, Date, ForeignKey, Integer, Boolean, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -36,8 +36,10 @@ class PlannedWorkout(Base):
     suggested_route_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("routes.id"), nullable=True)
     terrain_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    structured_session: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
-    is_unstructured: Mapped[bool] = mapped_column(Boolean, default=False)  # athlete will do the sport freely, no specific effort
+    is_unstructured: Mapped[bool] = mapped_column(Boolean, default=False)
     completed_activity_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("activities.id"), nullable=True)
     compliance_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     ai_compliance_notes: Mapped[str | None] = mapped_column(Text, nullable=True)

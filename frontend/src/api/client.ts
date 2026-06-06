@@ -68,6 +68,13 @@ export async function generatePlan(
   return r.data
 }
 
+export async function buildWorkoutStructure(workoutId: number, athleteId: number, routeId?: number) {
+  const r = await api.post(`/plan/workouts/${workoutId}/structure`, null, {
+    params: { athlete_id: athleteId, route_id: routeId },
+  })
+  return r.data
+}
+
 export async function setWorkoutUnstructured(workoutId: number, athleteId: number, isUnstructured: boolean) {
   const r = await api.patch(`/plan/workouts/${workoutId}/unstructured`, null, {
     params: { athlete_id: athleteId, is_unstructured: isUnstructured },

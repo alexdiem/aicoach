@@ -10,8 +10,8 @@ from app.routers import activities, athlete, auth, garmin_webhook, plan, routes
 
 
 _MIGRATIONS = [
-    # Column additions that create_all won't apply to existing tables
     "ALTER TABLE planned_workouts ADD COLUMN is_unstructured BOOLEAN NOT NULL DEFAULT 0",
+    "ALTER TABLE planned_workouts ADD COLUMN structured_session TEXT",
 ]
 
 

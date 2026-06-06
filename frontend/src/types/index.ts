@@ -63,6 +63,32 @@ export interface Route {
   created_at: string
 }
 
+export interface SessionInterval {
+  type: 'work' | 'rest'
+  rep?: number
+  total_reps?: number
+  duration_minutes: number
+  target?: string
+  notes: string
+  segment?: {
+    category: string
+    avg_gradient_pct: number
+    length_meters: number
+    est_duration_at_ftp_min: number
+  } | null
+}
+
+export interface StructuredSession {
+  warmup_minutes: number
+  warmup_notes: string | null
+  intervals: SessionInterval[]
+  cooldown_minutes: number
+  cooldown_notes: string | null
+  route_id: number | null
+  route_name: string | null
+  total_duration_minutes: number
+}
+
 export interface PlannedWorkout {
   id: number
   day_of_week: number
@@ -74,6 +100,7 @@ export interface PlannedWorkout {
   terrain_notes: string | null
   is_completed: boolean
   is_unstructured: boolean
+  structured_session: StructuredSession | null
   compliance_score: number | null
   ai_compliance_notes: string | null
 }

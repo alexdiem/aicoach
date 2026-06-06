@@ -1,9 +1,17 @@
 import { useEffect, useState } from 'react'
-import { RefreshCw, CalendarDays, ChevronDown } from 'lucide-react'
+import { RefreshCw, CalendarDays, ChevronDown, ChevronRight } from 'lucide-react'
 import clsx from 'clsx'
-import { getAthleteId, getCurrentPlan, generatePlan, markWorkoutComplete, setWorkoutUnstructured } from '../api/client'
+import {
+  getAthleteId,
+  getCurrentPlan,
+  generatePlan,
+  markWorkoutComplete,
+  setWorkoutUnstructured,
+  buildWorkoutStructure,
+  getRoutes,
+} from '../api/client'
 import SchedulePicker, { toApiSchedule } from '../components/SchedulePicker'
-import type { PlannedWorkout, WeeklyPlan } from '../types'
+import type { PlannedWorkout, Route, SessionInterval, StructuredSession, WeeklyPlan } from '../types'
 
 const PHASE_STYLES: Record<string, { text: string; bg: string; border: string }> = {
   BASE:     { text: 'text-blue-400',    bg: 'bg-blue-950/50',    border: 'border-blue-900' },
@@ -13,10 +21,7 @@ const PHASE_STYLES: Record<string, { text: string; bg: string; border: string }>
 }
 
 const SPORT_ICONS: Record<string, string> = {
-  CYCLING: '🚴',
-  RUNNING: '🏃',
-  XC_SKIING: '⛷️',
-  STRENGTH: '💪',
+  CYCLING: '🚴', RUNNING: '🏃', XC_SKIING: '⛷️', STRENGTH: '💪',
 }
 
 const TYPE_STYLES: Record<string, { dot: string; badge: string }> = {
@@ -35,19 +40,176 @@ function makeEmptySchedule() {
   return Array.from({ length: 7 }, () => ({ value: null as string | null }))
 }
 
+// ─── Session plan display ──────────────────────────────────────────────────
+
+function IntervalStep({ step }: { step: SessionInterval }) {
+  const isRest = step.type === 'rest'
+  return (
+    <div className={clsx('flex gap-3', isRest && 'opacity-60')}>
+      <div className="flex flex-col items-center gap-1 pt-0.5 shrink-0">
+        <div className={clsx('w-2 h-2 rounded-full shrink-0', isRest ? 'bg-zinc-600' : 'bg-blue-500')} />
+        <div className="w-px flex-1 bg-zinc-800" />
+      </div>
+      <div className="pb-3 min-w-0">
+        <div className="flex items-baseline gap-2 flex-wrap">
+          {!isRest && step.rep !== undefined && (
+            <span className="text-xs font-semibold text-zinc-300">
+              Rep {step.rep}/{step.total_reps}
+            </span>
+          )}
+          {isRest && <span className="text-xs font-semibold text-zinc-500">Rest</span>}
+          <span className="text-xs text-zinc-500">{step.duration_minutes}min</span>
+          {step.target && !isRest && (
+            <span className="text-xs font-mono text-blue-400">{step.target}</span>
+          )}
+        </div>
+        <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">{step.notes}</p>
+        {step.segment && (
+          <p className="text-xs text-amber-400/80 mt-0.5">
+            ⛰ {step.segment.category.replace(/_/g, ' ').toLowerCase()} ·{' '}
+            {step.segment.length_meters >= 1000
+              ? `${(step.segment.length_meters / 1000).toFixed(1)}km`
+              : `${step.segment.length_meters}m`}{' '}
+            at {step.segment.avg_gradient_pct}%
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SessionPlan({
+  session,
+  workoutId,
+  athleteId,
+  sport,
+  routes,
+  onRebuild,
+}: {
+  session: StructuredSession
+  workoutId: number
+  athleteId: number
+  sport: string
+  routes: Route[]
+  onRebuild: (session: StructuredSession) => void
+}) {
+  const [selectedRouteId, setSelectedRouteId] = useState<string>(
+    session.route_id ? String(session.route_id) : ''
+  )
+  const [rebuilding, setRebuilding] = useState(false)
+
+  async function handleApplyRoute() {
+    setRebuilding(true)
+    try {
+      const updated = await buildWorkoutStructure(
+        workoutId,
+        athleteId,
+        selectedRouteId ? Number(selectedRouteId) : undefined,
+      )
+      onRebuild(updated)
+    } finally {
+      setRebuilding(false)
+    }
+  }
+
+  const showRoutePicker = sport === 'CYCLING' && routes.length > 0
+
+  return (
+    <div className="mt-4 pt-4 border-t border-zinc-800">
+      {/* Route picker */}
+      {showRoutePicker && (
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          <span className="text-xs text-zinc-500 shrink-0">Route:</span>
+          <select
+            value={selectedRouteId}
+            onChange={(e) => setSelectedRouteId(e.target.value)}
+            className="bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+          >
+            <option value="">No route (indoor / unspecified)</option>
+            {routes.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name} — {r.distance_km}km ↑{r.elevation_gain_m}m
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={handleApplyRoute}
+            disabled={rebuilding}
+            className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 border border-blue-900/60 hover:border-blue-700 px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-50"
+          >
+            <RefreshCw size={11} className={rebuilding ? 'animate-spin' : ''} />
+            {rebuilding ? 'Updating…' : 'Apply route'}
+          </button>
+          {session.route_name && (
+            <span className="text-xs text-zinc-600 italic">Using: {session.route_name}</span>
+          )}
+        </div>
+      )}
+
+      {/* Warmup */}
+      {session.warmup_minutes > 0 && (
+        <div className="flex gap-3 mb-1">
+          <div className="flex flex-col items-center gap-1 pt-0.5 shrink-0">
+            <div className="w-2 h-2 rounded-full bg-emerald-700" />
+            <div className="w-px flex-1 bg-zinc-800" />
+          </div>
+          <div className="pb-3">
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs font-semibold text-emerald-600">Warmup</span>
+              <span className="text-xs text-zinc-500">{session.warmup_minutes}min</span>
+            </div>
+            {session.warmup_notes && (
+              <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">{session.warmup_notes}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Intervals */}
+      {session.intervals.map((step, i) => (
+        <IntervalStep key={i} step={step} />
+      ))}
+
+      {/* Cooldown */}
+      {session.cooldown_minutes > 0 && (
+        <div className="flex gap-3">
+          <div className="flex flex-col items-center gap-1 pt-0.5 shrink-0">
+            <div className="w-2 h-2 rounded-full bg-zinc-700" />
+          </div>
+          <div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs font-semibold text-zinc-600">Cooldown</span>
+              <span className="text-xs text-zinc-600">{session.cooldown_minutes}min</span>
+            </div>
+            {session.cooldown_notes && (
+              <p className="text-xs text-zinc-600 mt-0.5 leading-relaxed">{session.cooldown_notes}</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
 export default function Plan() {
   const athleteId = getAthleteId()!
   const [plan, setPlan] = useState<WeeklyPlan | null>(null)
+  const [routes, setRoutes] = useState<Route[]>([])
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showScheduler, setShowScheduler] = useState(false)
   const [schedule, setSchedule] = useState(makeEmptySchedule())
   const [phaseOverride, setPhaseOverride] = useState<string>('AUTO')
+  const [expandedSessions, setExpandedSessions] = useState<Set<number>>(new Set())
+  // Local overrides for structured sessions after route changes
+  const [sessionOverrides, setSessionOverrides] = useState<Record<number, StructuredSession>>({})
 
   useEffect(() => {
-    getCurrentPlan(athleteId)
-      .then(setPlan)
+    Promise.all([getCurrentPlan(athleteId), getRoutes(athleteId)])
+      .then(([p, r]) => { setPlan(p); setRoutes(r) })
       .finally(() => setLoading(false))
   }, [athleteId])
 
@@ -59,6 +221,7 @@ export default function Plan() {
       await generatePlan(athleteId, apiSchedule, phaseOverride === 'AUTO' ? null : phaseOverride)
       const updated = await getCurrentPlan(athleteId)
       setPlan(updated)
+      setSessionOverrides({})
       setShowScheduler(false)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Unknown error'
@@ -78,6 +241,18 @@ export default function Plan() {
     await setWorkoutUnstructured(workout.id, athleteId, !workout.is_unstructured)
     const updated = await getCurrentPlan(athleteId)
     setPlan(updated)
+  }
+
+  function toggleSession(workoutId: number) {
+    setExpandedSessions((prev) => {
+      const next = new Set(prev)
+      next.has(workoutId) ? next.delete(workoutId) : next.add(workoutId)
+      return next
+    })
+  }
+
+  function handleSessionRebuild(workoutId: number, session: StructuredSession) {
+    setSessionOverrides((prev) => ({ ...prev, [workoutId]: session }))
   }
 
   if (loading) return <div className="flex items-center justify-center h-64 text-zinc-500 text-sm">Loading…</div>
@@ -124,24 +299,19 @@ export default function Plan() {
           <p className="text-xs text-zinc-500 mb-5 leading-relaxed">
             Specify what you want to do on each day. Rest days are respected, sport preferences are honoured, and remaining days are filled automatically.
           </p>
-
-          {/* Phase selector */}
           <div className="mb-5">
-            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2.5 block">
-              Training phase
-            </label>
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2.5 block">Training phase</label>
             <div className="flex gap-2 flex-wrap">
               {[
-                { value: 'AUTO',     label: 'Auto-detect',  desc: 'Based on CTL, TSB, and 4-week block' },
-                { value: 'BASE',     label: 'Base',         desc: 'High volume, low intensity.', style: 'border-blue-700 text-blue-300 bg-blue-950/40' },
-                { value: 'BUILD',    label: 'Build',        desc: 'Rising intensity. VO2max and threshold work.', style: 'border-orange-700 text-orange-300 bg-orange-950/40' },
-                { value: 'PEAK',     label: 'Peak',         desc: 'Max quality. Sharpening before target period.', style: 'border-rose-700 text-rose-300 bg-rose-950/40' },
-                { value: 'RECOVERY', label: 'Recovery',     desc: 'Reduced load. Let adaptations consolidate.', style: 'border-emerald-700 text-emerald-300 bg-emerald-950/40' },
+                { value: 'AUTO',     label: 'Auto-detect',  style: null },
+                { value: 'BASE',     label: 'Base',         style: 'border-blue-700 text-blue-300 bg-blue-950/40' },
+                { value: 'BUILD',    label: 'Build',        style: 'border-orange-700 text-orange-300 bg-orange-950/40' },
+                { value: 'PEAK',     label: 'Peak',         style: 'border-rose-700 text-rose-300 bg-rose-950/40' },
+                { value: 'RECOVERY', label: 'Recovery',     style: 'border-emerald-700 text-emerald-300 bg-emerald-950/40' },
               ].map((opt) => (
                 <button
                   key={opt.value}
                   onClick={() => setPhaseOverride(opt.value)}
-                  title={opt.desc}
                   className={clsx(
                     'px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all',
                     phaseOverride === opt.value
@@ -154,9 +324,7 @@ export default function Plan() {
               ))}
             </div>
           </div>
-
           <SchedulePicker schedule={schedule} onChange={setSchedule} />
-
           <div className="flex items-center gap-3 mt-5">
             <button
               onClick={handleGenerate}
@@ -176,7 +344,7 @@ export default function Plan() {
         </div>
       )}
 
-      {/* Quick generate bar when scheduler is hidden */}
+      {/* Quick generate bar */}
       {!showScheduler && (
         <div className="flex items-center gap-3 flex-wrap">
           <button
@@ -208,7 +376,6 @@ export default function Plan() {
         <div className="bg-red-950/60 border border-red-800 rounded-xl p-4 text-red-300 text-sm">{error}</div>
       )}
 
-      {/* Coach's note */}
       {plan?.narrative && (
         <div className="bg-zinc-900 rounded-2xl p-5 border border-blue-900/40">
           <p className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-2">Coach's Note</p>
@@ -216,104 +383,133 @@ export default function Plan() {
         </div>
       )}
 
-      {/* Workout list */}
       {plan ? (
         <div className="flex flex-col gap-2.5">
           {plan.workouts.map((w) => {
             const typeStyle = TYPE_STYLES[w.workout_type] ?? { dot: 'bg-zinc-600', badge: 'text-zinc-400 bg-zinc-800 border-zinc-700' }
+            const sessionExpanded = expandedSessions.has(w.id)
+            const session = sessionOverrides[w.id] ?? w.structured_session
+            const hasSession = !!session
+
             return (
               <div
                 key={w.id}
                 className={clsx(
-                  'bg-zinc-900 rounded-2xl p-5 border transition-all',
+                  'bg-zinc-900 rounded-2xl border transition-all',
                   w.is_unstructured ? 'border-yellow-900/60' : 'border-zinc-800',
                   w.is_completed && 'opacity-60',
                 )}
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    {/* Day + sport row */}
-                    <div className="flex items-center gap-2.5 mb-2.5 flex-wrap">
-                      <span className="text-lg leading-none">{SPORT_ICONS[w.sport] ?? '🏋️'}</span>
-                      <span className="font-semibold text-white text-sm">
-                        {DAYS[w.day_of_week]}
-                        <span className="text-zinc-500 font-normal"> · {w.sport.replace('_', ' ')}</span>
-                      </span>
-                      {w.is_unstructured ? (
-                        <span className="text-xs px-2 py-0.5 rounded-full border border-yellow-800/60 text-yellow-400 bg-yellow-950/40 font-medium">
-                          free ride
+                <div className="p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2.5 mb-2.5 flex-wrap">
+                        <span className="text-lg leading-none">{SPORT_ICONS[w.sport] ?? '🏋️'}</span>
+                        <span className="font-semibold text-white text-sm">
+                          {DAYS[w.day_of_week]}
+                          <span className="text-zinc-500 font-normal"> · {w.sport.replace('_', ' ')}</span>
                         </span>
-                      ) : (
-                        <>
-                          <span className={clsx('text-xs px-2 py-0.5 rounded-full border font-medium', typeStyle.badge)}>
-                            {w.workout_type}
+                        {w.is_unstructured ? (
+                          <span className="text-xs px-2 py-0.5 rounded-full border border-yellow-800/60 text-yellow-400 bg-yellow-950/40 font-medium">
+                            free ride
                           </span>
-                          {w.intensity_zone && (
-                            <span className="text-xs text-zinc-500 font-mono">{w.intensity_zone}</span>
-                          )}
-                        </>
+                        ) : (
+                          <>
+                            <span className={clsx('text-xs px-2 py-0.5 rounded-full border font-medium', typeStyle.badge)}>
+                              {w.workout_type}
+                            </span>
+                            {w.intensity_zone && (
+                              <span className="text-xs text-zinc-500 font-mono">{w.intensity_zone}</span>
+                            )}
+                          </>
+                        )}
+                        <span className="text-sm text-zinc-400 ml-auto font-semibold tabular-nums">
+                          {w.duration_minutes}<span className="text-zinc-600 font-normal text-xs">min</span>
+                        </span>
+                      </div>
+
+                      {w.is_unstructured ? (
+                        <p className="text-sm text-zinc-500 italic">No structured effort — enjoy the ride and go by feel.</p>
+                      ) : (
+                        <p className="text-sm text-zinc-400 leading-relaxed">{w.purpose}</p>
                       )}
-                      <span className="text-sm text-zinc-400 ml-auto font-semibold tabular-nums">
-                        {w.duration_minutes}<span className="text-zinc-600 font-normal text-xs">min</span>
-                      </span>
+
+                      {!w.is_unstructured && w.terrain_notes && (
+                        <p className="text-xs text-amber-400/80 mt-2 leading-relaxed">⛰ {w.terrain_notes}</p>
+                      )}
+
+                      {w.ai_compliance_notes && (
+                        <p className="text-xs text-zinc-600 mt-2 italic">Compliance: {w.ai_compliance_notes}</p>
+                      )}
                     </div>
 
-                    {/* Purpose / note */}
-                    {w.is_unstructured ? (
-                      <p className="text-sm text-zinc-500 italic">No structured effort — enjoy the ride and go by feel.</p>
-                    ) : (
-                      <p className="text-sm text-zinc-400 leading-relaxed">{w.purpose}</p>
-                    )}
-
-                    {/* Terrain notes */}
-                    {!w.is_unstructured && w.terrain_notes && (
-                      <p className="text-xs text-amber-400/80 mt-2 leading-relaxed">⛰ {w.terrain_notes}</p>
-                    )}
-
-                    {/* Compliance notes */}
-                    {w.ai_compliance_notes && (
-                      <p className="text-xs text-zinc-600 mt-2 italic">
-                        Compliance: {w.ai_compliance_notes}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Action column */}
-                  <div className="flex flex-col items-end gap-2 shrink-0">
-                    {w.compliance_score !== null && (
-                      <span className={clsx(
-                        'text-sm font-bold tabular-nums',
-                        w.compliance_score >= 80 ? 'text-emerald-400' : w.compliance_score >= 60 ? 'text-yellow-400' : 'text-rose-400'
-                      )}>
-                        {w.compliance_score}%
-                      </span>
-                    )}
-                    {!w.is_completed && (
-                      <button
-                        onClick={() => handleToggleUnstructured(w)}
-                        title={w.is_unstructured ? 'Switch back to structured workout' : 'Mark as free ride — no specific effort'}
-                        className={clsx(
-                          'text-xs px-2.5 py-1 rounded-lg border transition-all',
-                          w.is_unstructured
-                            ? 'text-yellow-400 border-yellow-800/60 hover:border-yellow-600'
-                            : 'text-zinc-600 border-zinc-800 hover:text-zinc-300 hover:border-zinc-600',
-                        )}
-                      >
-                        {w.is_unstructured ? 'Go structured' : 'Free ride'}
-                      </button>
-                    )}
-                    {w.is_completed ? (
-                      <span className="text-emerald-400 text-sm font-medium">✓ Done</span>
-                    ) : (
-                      <button
-                        onClick={() => handleMarkComplete(w)}
-                        className="text-xs text-blue-400 hover:text-blue-300 border border-blue-900/60 hover:border-blue-700 px-2.5 py-1 rounded-lg transition-all"
-                      >
-                        Mark done
-                      </button>
-                    )}
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      {w.compliance_score !== null && (
+                        <span className={clsx(
+                          'text-sm font-bold tabular-nums',
+                          w.compliance_score >= 80 ? 'text-emerald-400' : w.compliance_score >= 60 ? 'text-yellow-400' : 'text-rose-400'
+                        )}>
+                          {w.compliance_score}%
+                        </span>
+                      )}
+                      {!w.is_completed && (
+                        <button
+                          onClick={() => handleToggleUnstructured(w)}
+                          className={clsx(
+                            'text-xs px-2.5 py-1 rounded-lg border transition-all',
+                            w.is_unstructured
+                              ? 'text-yellow-400 border-yellow-800/60 hover:border-yellow-600'
+                              : 'text-zinc-600 border-zinc-800 hover:text-zinc-300 hover:border-zinc-600',
+                          )}
+                        >
+                          {w.is_unstructured ? 'Go structured' : 'Free ride'}
+                        </button>
+                      )}
+                      {w.is_completed ? (
+                        <span className="text-emerald-400 text-sm font-medium">✓ Done</span>
+                      ) : (
+                        <button
+                          onClick={() => handleMarkComplete(w)}
+                          className="text-xs text-blue-400 hover:text-blue-300 border border-blue-900/60 hover:border-blue-700 px-2.5 py-1 rounded-lg transition-all"
+                        >
+                          Mark done
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
+
+                {/* Session plan toggle */}
+                {hasSession && !w.is_unstructured && (
+                  <div className="border-t border-zinc-800">
+                    <button
+                      onClick={() => toggleSession(w.id)}
+                      className="w-full flex items-center gap-2 px-5 py-2.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                    >
+                      <ChevronRight
+                        size={12}
+                        className={clsx('transition-transform', sessionExpanded && 'rotate-90')}
+                      />
+                      Session plan
+                      {session.route_name && (
+                        <span className="text-zinc-600 ml-1">· {session.route_name}</span>
+                      )}
+                    </button>
+
+                    {sessionExpanded && (
+                      <div className="px-5 pb-5">
+                        <SessionPlan
+                          session={session}
+                          workoutId={w.id}
+                          athleteId={athleteId}
+                          sport={w.sport}
+                          routes={routes}
+                          onRebuild={(s) => handleSessionRebuild(w.id, s)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )
           })}
