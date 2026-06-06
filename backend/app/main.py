@@ -2,16 +2,28 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.config import settings
 from app.database import Base, engine
 from app.routers import activities, athlete, auth, garmin_webhook, plan, routes
 
 
+_MIGRATIONS = [
+    # Column additions that create_all won't apply to existing tables
+    "ALTER TABLE planned_workouts ADD COLUMN is_unstructured BOOLEAN NOT NULL DEFAULT 0",
+]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        for sql in _MIGRATIONS:
+            try:
+                await conn.execute(text(sql))
+            except Exception:
+                pass  # column already exists
     yield
 
 
