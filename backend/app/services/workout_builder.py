@@ -133,36 +133,94 @@ def _gap_minutes(end_km: float, start_km: float) -> float:
     return max(0.0, (start_km - end_km) / _DESCENT_SPEED_KMH * 60)
 
 
+def _effective_rest_minutes(seg_a: dict, seg_b: dict, all_segments: list[dict]) -> float:
+    """
+    True elapsed time between the end of seg_a and the start of seg_b,
+    including any intermediate terrain segments (secondary climbs, rolling
+    sections) that the rider must pass through.
+    """
+    between = sorted(
+        [s for s in all_segments
+         if s["start_km"] >= seg_a["end_km"] - 0.01 and s["end_km"] <= seg_b["start_km"] + 0.01
+         and s is not seg_a and s is not seg_b],
+        key=lambda s: s["start_km"],
+    )
+    total = 0.0
+    prev_km = seg_a["end_km"]
+    for s in between:
+        total += _gap_minutes(prev_km, s["start_km"])
+        total += s["est_duration_at_ftp_min"]
+        prev_km = s["end_km"]
+    total += _gap_minutes(prev_km, seg_b["start_km"])
+    return total
+
+
 def _find_best_cluster(
     primary_candidates: list[dict],
+    all_segments: list[dict],
     hard_budget_min: float,
     max_rest_min: float,
     rank_fn,
 ) -> list[dict]:
     """
-    Find the best cluster of consecutive primary segments where no adjacent gap
-    exceeds max_rest_min and total hard-effort time fits within hard_budget_min.
+    Find the best cluster of consecutive primary segments where the *effective*
+    rest between any two adjacent selected efforts never exceeds max_rest_min.
+
+    Effective rest = flat/descent gap time + time through any intermediate terrain
+    (secondary climbs etc.) that sits between the two hard efforts.
 
     Algorithm:
       1. Sort candidates by route position.
-      2. Split into clusters wherever the gap between consecutive candidates
-         exceeds max_rest_min.
-      3. For each cluster, take the top-ranked segments that fit the budget.
-      4. Return the cluster with the most total hard-effort time (best stimulus).
+      2. Split into clusters using effective rest (not bare km gap).
+      3. For each cluster pick top-ranked segments up to the hard budget,
+         then re-check that no pair of selected segments now violates the
+         max rest constraint after ranking reorders them.
+      4. Return the cluster with the most total hard-effort time.
     """
     if not primary_candidates:
         return []
 
     by_pos = sorted(primary_candidates, key=lambda s: s["start_km"])
 
-    # Split into clusters
+    # Split into clusters using effective rest
     clusters: list[list[dict]] = [[by_pos[0]]]
     for seg in by_pos[1:]:
-        gap = _gap_minutes(clusters[-1][-1]["end_km"], seg["start_km"])
-        if gap <= max_rest_min:
+        eff = _effective_rest_minutes(clusters[-1][-1], seg, all_segments)
+        if eff <= max_rest_min:
             clusters[-1].append(seg)
         else:
             clusters.append([seg])
+
+    # For each cluster, select top-ranked segments up to budget,
+    # then drop any that create a rest violation in route order.
+    best: list[dict] = []
+    best_work = 0.0
+
+    for cluster in clusters:
+        ranked = sorted(cluster, key=rank_fn)
+        selected: list[dict] = []
+        work = 0.0
+        for seg in ranked:
+            t = seg["est_duration_at_ftp_min"]
+            if work + t <= hard_budget_min:
+                selected.append(seg)
+                work += t
+
+        # Re-order selected by route position and enforce max_rest pairwise
+        in_order = sorted(selected, key=lambda s: s["start_km"])
+        valid: list[dict] = [in_order[0]] if in_order else []
+        for seg in in_order[1:]:
+            eff = _effective_rest_minutes(valid[-1], seg, all_segments)
+            if eff <= max_rest_min:
+                valid.append(seg)
+            # else skip this segment — it's too far from the previous one
+
+        valid_work = sum(s["est_duration_at_ftp_min"] for s in valid)
+        if valid_work > best_work:
+            best_work = valid_work
+            best = valid
+
+    return best
 
     # For each cluster, greedily pick top-ranked segments up to budget
     best: list[dict] = []
@@ -235,7 +293,7 @@ def _build_route_ride(workout_type: str, duration_minutes: int, sport: str, ftp:
     # ── Select a coherent cluster of hard segments ────────────────────────────
     primary_candidates = [s for s in all_segments if s["category"] in primary_cats]
     hard_budget_min = duration_minutes * 0.60
-    selected_primary = _find_best_cluster(primary_candidates, hard_budget_min, max_rest_min, _rank)
+    selected_primary = _find_best_cluster(primary_candidates, all_segments, hard_budget_min, max_rest_min, _rank)
     selected_primary_ids = {id(s) for s in selected_primary}
 
     # Determine the geographic bounds of the structured section
