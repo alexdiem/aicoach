@@ -107,6 +107,44 @@ export async function deleteRoute(routeId: number, athleteId: number): Promise<v
   await api.delete(`/routes/${routeId}`, { params: { athlete_id: athleteId } })
 }
 
+export type ModelPref = 'haiku' | 'sonnet'
+
+export function getModelPref(): ModelPref {
+  return (localStorage.getItem('ai_model_pref') as ModelPref) ?? 'haiku'
+}
+
+export function setModelPref(pref: ModelPref) {
+  localStorage.setItem('ai_model_pref', pref)
+}
+
+export interface TrainNowResult {
+  workout_type: string
+  sport: string
+  duration_minutes: number
+  narrative: string
+  readiness: { score: number; zone: string }
+  session: import('../types').StructuredSession
+}
+
+export async function trainNow(
+  athleteId: number,
+  sport: string,
+  durationMinutes?: number,
+  distanceKm?: number,
+): Promise<TrainNowResult> {
+  const r = await api.post(
+    '/plan/train-now',
+    {
+      sport,
+      duration_minutes: durationMinutes ?? null,
+      distance_km: distanceKm ?? null,
+      model_pref: getModelPref(),
+    },
+    { params: { athlete_id: athleteId } },
+  )
+  return r.data
+}
+
 export async function downloadWorkoutFit(workoutId: number, athleteId: number, filename: string): Promise<void> {
   const r = await api.get(`/plan/workouts/${workoutId}/fit`, {
     params: { athlete_id: athleteId },

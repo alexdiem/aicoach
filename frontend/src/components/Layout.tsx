@@ -1,7 +1,8 @@
 import { NavLink } from 'react-router-dom'
-import { type ReactNode } from 'react'
-import { LayoutDashboard, CalendarDays, Map, Settings } from 'lucide-react'
+import { type ReactNode, useState } from 'react'
+import { LayoutDashboard, CalendarDays, Map, Settings, Bot } from 'lucide-react'
 import clsx from 'clsx'
+import { getModelPref, setModelPref, type ModelPref } from '../api/client'
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -11,6 +12,13 @@ const nav = [
 ]
 
 export default function Layout({ children }: { children: ReactNode }) {
+  const [model, setModel] = useState<ModelPref>(getModelPref())
+
+  function toggleModel(pref: ModelPref) {
+    setModel(pref)
+    setModelPref(pref)
+  }
+
   return (
     <div className="min-h-screen flex bg-zinc-950">
       <nav className="w-52 shrink-0 bg-zinc-900 border-r border-zinc-800 flex flex-col p-3">
@@ -36,6 +44,32 @@ export default function Layout({ children }: { children: ReactNode }) {
               {label}
             </NavLink>
           ))}
+        </div>
+
+        {/* Model selector */}
+        <div className="mt-auto pt-4 border-t border-zinc-800">
+          <div className="px-1 mb-1.5 flex items-center gap-1.5 text-[10px] text-zinc-600 uppercase tracking-wider">
+            <Bot size={10} /> AI Model
+          </div>
+          <div className="flex rounded-lg overflow-hidden border border-zinc-700 text-xs font-medium">
+            {(['haiku', 'sonnet'] as ModelPref[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => toggleModel(m)}
+                className={clsx(
+                  'flex-1 py-1.5 transition-colors capitalize',
+                  model === m
+                    ? 'bg-zinc-700 text-white'
+                    : 'text-zinc-500 hover:text-zinc-300',
+                )}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 px-1 text-[10px] text-zinc-600 leading-snug">
+            {model === 'haiku' ? 'Fast · lower cost' : 'Smarter · higher cost'}
+          </p>
         </div>
       </nav>
       <main className="flex-1 overflow-auto">
