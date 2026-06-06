@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { Activity } from 'lucide-react'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Plan from './pages/Plan'
@@ -29,24 +30,40 @@ export default function App() {
 
   if (!athleteId) {
     return (
-      <div className="min-h-screen flex items-center justify-center flex-col gap-6">
-        <div className="text-center max-w-md">
-          <h1 className="text-4xl font-bold text-white mb-2">aicoach</h1>
-          <p className="text-gray-400 mb-8">Your cross-sport training planner</p>
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-6">
+        <div className="w-full max-w-sm">
+          <div className="flex items-center gap-2 mb-10">
+            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
+              <Activity size={16} className="text-white" />
+            </div>
+            <span className="text-xl font-bold tracking-tight text-white">ai<span className="text-blue-400">coach</span></span>
+          </div>
+
+          <h1 className="text-2xl font-bold text-white mb-1">Get started</h1>
+          <p className="text-zinc-400 text-sm mb-8">
+            Connect your Garmin account to start building your training plan.
+          </p>
+
           <button
             onClick={handleConnect}
             disabled={connecting}
-            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-8 py-3 rounded-lg font-semibold transition-colors"
+            className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg font-semibold text-sm transition-colors"
           >
             {connecting ? 'Connecting…' : 'Connect Garmin Account'}
           </button>
+
           {error && (
-            <p className="text-red-400 text-sm mt-4 text-left bg-red-950 p-3 rounded-lg">{error}</p>
+            <div className="mt-4 bg-red-950/60 border border-red-800 rounded-lg p-3 text-red-300 text-sm">
+              {error}
+            </div>
           )}
-          <p className="text-gray-600 text-sm mt-6">
-            Set <code className="text-gray-400 bg-gray-800 px-1 rounded">GARMIN_EMAIL</code> and{' '}
-            <code className="text-gray-400 bg-gray-800 px-1 rounded">GARMIN_PASSWORD</code> in{' '}
-            <code className="text-gray-400 bg-gray-800 px-1 rounded">backend/.env</code> first.
+
+          <p className="text-zinc-600 text-xs mt-6 leading-relaxed">
+            Set{' '}
+            <code className="text-zinc-400 bg-zinc-800 px-1 py-0.5 rounded">GARMIN_EMAIL</code>{' '}
+            and{' '}
+            <code className="text-zinc-400 bg-zinc-800 px-1 py-0.5 rounded">GARMIN_PASSWORD</code>{' '}
+            in <code className="text-zinc-400 bg-zinc-800 px-1 py-0.5 rounded">backend/.env</code> first.
           </p>
         </div>
       </div>

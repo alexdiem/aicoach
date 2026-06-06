@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Upload, X } from 'lucide-react'
 import { getAthleteId, getRoutes, uploadRoute, deleteRoute } from '../api/client'
 import RouteCard from '../components/RouteCard'
 import type { Route } from '../types'
@@ -48,13 +49,18 @@ export default function RoutesPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-white">Route Library</h1>
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-xl font-bold text-white">Route Library</h1>
+        <p className="text-sm text-zinc-500 mt-0.5">Upload GPX files — routes are analysed for climbs and matched to planned intervals.</p>
+      </div>
 
       {/* Upload zone */}
       <div
-        className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer ${
-          dragOver ? 'border-blue-500 bg-blue-950/30' : 'border-gray-700 hover:border-gray-600'
+        className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all cursor-pointer ${
+          dragOver
+            ? 'border-blue-500 bg-blue-950/20'
+            : 'border-zinc-800 hover:border-zinc-600'
         }`}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
@@ -71,41 +77,47 @@ export default function RoutesPage() {
             if (file) { setPendingFile(file); setUploadName(file.name.replace('.gpx', '')) }
           }}
         />
-        <div className="text-4xl mb-3">🗺️</div>
-        <p className="text-gray-400">Drop a GPX file here, or click to browse</p>
-        <p className="text-gray-600 text-sm mt-1">Routes are analyzed for climb segments and matched to workouts</p>
+        <div className="w-10 h-10 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center mx-auto mb-3">
+          <Upload size={18} className="text-zinc-400" />
+        </div>
+        <p className="text-zinc-300 text-sm font-medium">Drop a GPX file here</p>
+        <p className="text-zinc-600 text-xs mt-1">or click to browse</p>
       </div>
 
+      {/* Pending upload */}
       {pendingFile && (
-        <div className="bg-gray-900 rounded-xl p-4 border border-blue-800 flex items-center gap-3">
+        <div className="bg-zinc-900 rounded-2xl p-4 border border-blue-900/60 flex items-center gap-3">
           <div className="flex-1">
-            <p className="text-sm text-gray-400 mb-2">Route name:</p>
+            <p className="text-xs text-zinc-500 mb-1.5">Route name</p>
             <input
               value={uploadName}
               onChange={(e) => setUploadName(e.target.value)}
-              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm w-full"
+              className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
               placeholder="e.g. Holmenkollen loop"
             />
           </div>
           <button
             onClick={handleUpload}
             disabled={uploading || !uploadName.trim()}
-            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors shrink-0"
           >
-            {uploading ? 'Analyzing…' : 'Upload & Analyze'}
+            {uploading ? 'Analysing…' : 'Upload'}
           </button>
-          <button onClick={() => setPendingFile(null)} className="text-gray-500 hover:text-gray-300 px-2">
-            ✕
+          <button
+            onClick={() => setPendingFile(null)}
+            className="text-zinc-500 hover:text-zinc-300 transition-colors p-1"
+          >
+            <X size={16} />
           </button>
         </div>
       )}
 
       {loading ? (
-        <div className="text-gray-500 text-center py-8">Loading routes…</div>
+        <div className="text-zinc-500 text-sm text-center py-8">Loading routes…</div>
       ) : routes.length === 0 ? (
-        <div className="text-center py-12 text-gray-600">
-          <p>No routes yet. Upload a GPX file to get started.</p>
-          <p className="text-sm mt-2">The app will analyze climb segments and match routes to your planned intervals.</p>
+        <div className="text-center py-16 text-zinc-600">
+          <p className="text-sm">No routes yet.</p>
+          <p className="text-xs mt-1">Upload a GPX file to get started.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

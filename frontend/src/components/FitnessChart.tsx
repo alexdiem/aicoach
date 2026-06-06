@@ -16,6 +16,22 @@ interface Props {
   data: FitnessPoint[]
 }
 
+function CustomTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-3 text-xs shadow-xl">
+      <p className="text-zinc-300 font-semibold mb-2">{label}</p>
+      {payload.map((p: any) => (
+        <div key={p.name} className="flex items-center gap-2 mb-1">
+          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
+          <span className="text-zinc-400">{p.name}</span>
+          <span className="text-zinc-100 font-semibold ml-auto pl-4 tabular-nums">{Math.round(p.value)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function FitnessChart({ data }: Props) {
   const formatted = data.map((d) => ({
     ...d,
@@ -23,49 +39,54 @@ export default function FitnessChart({ data }: Props) {
   }))
 
   return (
-    <ResponsiveContainer width="100%" height={260}>
-      <LineChart data={formatted} margin={{ top: 5, right: 16, left: 0, bottom: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+    <ResponsiveContainer width="100%" height={240}>
+      <LineChart data={formatted} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
         <XAxis
           dataKey="dateLabel"
-          tick={{ fill: '#6b7280', fontSize: 11 }}
+          tick={{ fill: '#71717a', fontSize: 11 }}
           tickLine={false}
+          axisLine={false}
           interval={Math.floor(formatted.length / 6)}
         />
-        <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} tickLine={false} axisLine={false} />
-        <Tooltip
-          contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 8 }}
-          labelStyle={{ color: '#e5e7eb', fontWeight: 600 }}
-          itemStyle={{ color: '#d1d5db' }}
+        <YAxis
+          tick={{ fill: '#71717a', fontSize: 11 }}
+          tickLine={false}
+          axisLine={false}
         />
-        <Legend wrapperStyle={{ paddingTop: 8, fontSize: 12 }} />
-        <ReferenceLine y={0} stroke="#374151" strokeDasharray="4 4" />
+        <Tooltip content={<CustomTooltip />} />
+        <Legend
+          wrapperStyle={{ paddingTop: 12, fontSize: 11, color: '#71717a' }}
+          iconType="circle"
+          iconSize={8}
+        />
+        <ReferenceLine y={0} stroke="#3f3f46" strokeDasharray="4 4" />
         <Line
           type="monotone"
           dataKey="ctl"
-          name="CTL (Fitness)"
+          name="CTL"
           stroke="#3b82f6"
           strokeWidth={2}
           dot={false}
-          activeDot={{ r: 4 }}
+          activeDot={{ r: 3, strokeWidth: 0 }}
         />
         <Line
           type="monotone"
           dataKey="atl"
-          name="ATL (Fatigue)"
-          stroke="#ef4444"
+          name="ATL"
+          stroke="#f43f5e"
           strokeWidth={2}
           dot={false}
-          activeDot={{ r: 4 }}
+          activeDot={{ r: 3, strokeWidth: 0 }}
         />
         <Line
           type="monotone"
           dataKey="tsb"
-          name="TSB (Form)"
-          stroke="#22c55e"
+          name="TSB"
+          stroke="#10b981"
           strokeWidth={2}
           dot={false}
-          activeDot={{ r: 4 }}
+          activeDot={{ r: 3, strokeWidth: 0 }}
         />
       </LineChart>
     </ResponsiveContainer>
