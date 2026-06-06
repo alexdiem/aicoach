@@ -1,6 +1,4 @@
 import { useEffect, useState } from 'react'
-import { TrendingUp, TrendingDown, Minus, ChevronRight, Moon, Heart, Zap, Battery } from 'lucide-react'
-import clsx from 'clsx'
 import { getAthleteId, getActivities, getFitnessMetrics, getCurrentPlan, markWorkoutComplete } from '../api/client'
 import FitnessChart from '../components/FitnessChart'
 import ActivityFeed from '../components/ActivityFeed'
@@ -8,98 +6,42 @@ import WorkoutCard from '../components/WorkoutCard'
 import TrainNow from '../components/TrainNow'
 import type { Activity, FitnessMetrics, PlannedWorkout, WeeklyPlan } from '../types'
 
-// ─── Readiness ring ──────────────────────────────────────────────────────────
+// ─── Section divider ──────────────────────────────────────────────────────────
 
-function ReadinessRing({ score, zone }: { score: number; zone: string }) {
-  const r = 44
-  const circ = 2 * Math.PI * r
-  const filled = (score / 100) * circ
+function SectionDivider() {
+  return <hr className="mt-12 mb-8 border-0 h-px" style={{ backgroundColor: '#D62828' }} />
+}
 
-  const color =
-    score >= 80 ? '#22c55e'
-    : score >= 60 ? '#3b82f6'
-    : score >= 40 ? '#f59e0b'
-    : score >= 20 ? '#f97316'
-    : '#ef4444'
-
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="relative w-28 h-28">
-        <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r={r} fill="none" stroke="#27272a" strokeWidth="10" />
-          <circle
-            cx="50" cy="50" r={r}
-            fill="none"
-            stroke={color}
-            strokeWidth="10"
-            strokeLinecap="round"
-            strokeDasharray={`${filled} ${circ}`}
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-bold text-white tabular-nums">{score}</span>
-          <span className="text-[10px] text-zinc-500 uppercase tracking-wide">/ 100</span>
-        </div>
-      </div>
-      <span className="text-sm font-semibold" style={{ color }}>{zone}</span>
-    </div>
+    <p className="text-xs tracking-[0.2em] uppercase mb-2 font-normal" style={{ color: '#D62828' }}>
+      {children}
+    </p>
   )
 }
 
-// ─── Signal chips ─────────────────────────────────────────────────────────────
+// ─── Training load row ────────────────────────────────────────────────────────
 
-function SignalChip({
-  icon: Icon,
-  label,
-  value,
-  sub,
-  good,
-}: {
-  icon: React.ElementType
-  label: string
-  value: string
-  sub?: string
-  good?: boolean | null
-}) {
-  return (
-    <div className="flex items-center gap-2.5 bg-zinc-800/60 rounded-xl px-3 py-2.5">
-      <div className={clsx('w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
-        good === true ? 'bg-emerald-900/60' : good === false ? 'bg-rose-900/60' : 'bg-zinc-700')}>
-        <Icon size={13} className={good === true ? 'text-emerald-400' : good === false ? 'text-rose-400' : 'text-zinc-400'} />
-      </div>
-      <div className="min-w-0">
-        <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{label}</p>
-        <p className="text-sm font-semibold text-white leading-tight">{value}</p>
-        {sub && <p className="text-[10px] text-zinc-500">{sub}</p>}
-      </div>
-    </div>
-  )
-}
-
-// ─── Training load card ───────────────────────────────────────────────────────
-
-function LoadMetric({
+function LoadRow({
   label,
   value,
   description,
-  trend,
 }: {
   label: string
   value: number
   description: string
-  trend?: 'up' | 'down' | 'flat'
 }) {
-  const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Minus
-  const trendColor = trend === 'up' ? 'text-emerald-400' : trend === 'down' ? 'text-rose-400' : 'text-zinc-500'
-
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-zinc-500 uppercase tracking-wider">{label}</span>
-        {trend && <TrendIcon size={12} className={trendColor} />}
-      </div>
-      <p className="text-2xl font-bold text-white tabular-nums">{Math.round(value)}</p>
-      <p className="text-xs text-zinc-400 leading-snug">{description}</p>
+    <div className="flex items-baseline gap-6 py-4 border-b border-gray-200 last:border-b-0">
+      <span className="text-xs tracking-widest uppercase w-32 shrink-0" style={{ color: '#8C7B6B' }}>
+        {label}
+      </span>
+      <span className="text-5xl font-black tabular-nums leading-none w-24 shrink-0" style={{ color: '#1A1A1A' }}>
+        {Math.round(value)}
+      </span>
+      <span className="text-sm leading-snug" style={{ color: '#8C7B6B' }}>
+        {description}
+      </span>
     </div>
   )
 }
@@ -169,166 +111,147 @@ export default function Dashboard() {
   }
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-zinc-500 text-sm">Loading…</div>
+    return (
+      <div className="flex items-center justify-center h-64 text-sm" style={{ color: '#8C7B6B' }}>
+        Loading…
+      </div>
+    )
   }
 
   const current = fitness?.current ?? { ctl: 0, atl: 0, tsb: 0 }
   const readiness = fitness?.readiness
   const signals = readiness?.signals ?? {}
 
-  return (
-    <div className="flex flex-col gap-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-white">Dashboard</h1>
-          <p className="text-sm text-zinc-500 mt-0.5">
-            {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </p>
-        </div>
-        {fitness && (
-          <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-full px-3 py-1.5 text-xs">
-            <span className="text-zinc-400">{fitness.season === 'SKI' ? '⛷️' : '🚴'}</span>
-            <span className="text-zinc-300 font-medium">
-              {fitness.season === 'SKI' ? 'Ski season' : 'Road season'}
-            </span>
-          </div>
-        )}
-      </div>
+  // Build inline signals string
+  const signalParts: string[] = []
+  if (signals.sleep_score != null) signalParts.push(`Sleep ${signals.sleep_score}`)
+  if (signals.hrv_status) signalParts.push(`HRV ${signals.hrv_status.toLowerCase()}`)
+  if (signals.body_battery != null) signalParts.push(`Battery ${signals.body_battery}%`)
+  if (signals.resting_hr != null) signalParts.push(`RHR ${Math.round(signals.resting_hr)} bpm`)
 
-      {/* Readiness + signals */}
+  const today = new Date()
+
+  // suppress unused warning — kept for potential future use
+  void ctlTrend(fitness?.series)
+
+  return (
+    <div>
+      {/* Date headline */}
+      <p className="serif italic text-sm mb-1" style={{ color: '#8C7B6B' }}>
+        {fitness?.season === 'SKI' ? 'Ski season' : 'Road season'}
+      </p>
+      <h1 className="serif text-6xl font-black tracking-tight leading-none mb-6" style={{ color: '#1A1A1A' }}>
+        {today.toLocaleDateString('en-GB', { weekday: 'long' })}
+        <span className="text-2xl font-normal ml-3" style={{ color: '#8C7B6B' }}>
+          {today.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}
+        </span>
+      </h1>
+
+      {/* Readiness */}
       {readiness && (
-        <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Today's Readiness</p>
-          <div className="flex gap-6 items-start">
-            <ReadinessRing score={readiness.score} zone={readiness.zone} />
-            <div className="flex-1 flex flex-col gap-3">
-              <p className="text-sm text-zinc-300 leading-relaxed">{readiness.guidance}</p>
-              <div className="grid grid-cols-2 gap-2">
-                {signals.body_battery != null && (
-                  <SignalChip
-                    icon={Battery}
-                    label="Body battery"
-                    value={`${signals.body_battery}%`}
-                    good={signals.body_battery >= 60 ? true : signals.body_battery < 30 ? false : null}
-                  />
-                )}
-                {signals.hrv_status && (
-                  <SignalChip
-                    icon={Heart}
-                    label="HRV status"
-                    value={signals.hrv_status}
-                    good={signals.hrv_status.toLowerCase() === 'balanced' ? true : signals.hrv_status.toLowerCase() === 'low' ? false : null}
-                  />
-                )}
-                {signals.sleep_score != null && (
-                  <SignalChip
-                    icon={Moon}
-                    label="Sleep score"
-                    value={`${signals.sleep_score}`}
-                    sub={signals.sleep_hours ? `${signals.sleep_hours}h` : undefined}
-                    good={signals.sleep_score >= 70 ? true : signals.sleep_score < 50 ? false : null}
-                  />
-                )}
-                {signals.resting_hr != null && (
-                  <SignalChip
-                    icon={Zap}
-                    label="Resting HR"
-                    value={`${Math.round(signals.resting_hr)} bpm`}
-                  />
-                )}
-              </div>
+        <>
+          <SectionLabel>Readiness</SectionLabel>
+          <div className="flex gap-8 items-start">
+            <div>
+              <span className="text-9xl font-black leading-none tabular-nums" style={{ color: '#1A1A1A' }}>
+                {readiness.score}
+              </span>
+            </div>
+            <div className="flex-1 pt-2">
+              <p className="text-sm font-bold mb-2" style={{ color: '#1A1A1A' }}>
+                {readiness.zone}
+              </p>
+              <p className="text-sm leading-relaxed mb-3" style={{ color: '#8C7B6B' }}>
+                {readiness.guidance}
+              </p>
+              {signalParts.length > 0 && (
+                <p className="text-xs" style={{ color: '#8C7B6B' }}>
+                  {signalParts.join(' · ')}
+                </p>
+              )}
             </div>
           </div>
-        </div>
+        </>
       )}
 
-      {/* Train Now */}
-      <TrainNow athleteId={athleteId} />
-
-      {/* Training load metrics */}
-      <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Training Load</p>
-        <div className="grid grid-cols-3 gap-6 divide-x divide-zinc-800">
-          <LoadMetric
-            label="CTL — Fitness"
-            value={current.ctl}
-            description={ctlContext(current.ctl)}
-            trend={ctlTrend(fitness?.series)}
-          />
-          <div className="pl-6">
-            <LoadMetric
-              label="ATL — Fatigue"
-              value={current.atl}
-              description={atlContext(current.atl, current.ctl)}
-              trend={current.atl > current.ctl * 1.15 ? 'up' : current.atl < current.ctl * 0.8 ? 'down' : 'flat'}
-            />
-          </div>
-          <div className="pl-6">
-            <LoadMetric
-              label="TSB — Form"
-              value={current.tsb}
-              description={tsbContext(current.tsb)}
-              trend={current.tsb >= 0 ? 'up' : 'down'}
-            />
-          </div>
-        </div>
+      {/* Training load */}
+      <SectionDivider />
+      <SectionLabel>Training Load</SectionLabel>
+      <div>
+        <LoadRow
+          label="CTL — Fitness"
+          value={current.ctl}
+          description={ctlContext(current.ctl)}
+        />
+        <LoadRow
+          label="ATL — Fatigue"
+          value={current.atl}
+          description={atlContext(current.atl, current.ctl)}
+        />
+        <LoadRow
+          label="TSB — Form"
+          value={current.tsb}
+          description={tsbContext(current.tsb)}
+        />
       </div>
+
+      {/* Train Now */}
+      <SectionDivider />
+      <TrainNow athleteId={athleteId} />
 
       {/* 90-day chart */}
       {fitness && fitness.series.length > 0 && (
-        <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-          <h2 className="text-sm font-semibold text-zinc-300 mb-5">90-Day Training Load</h2>
+        <>
+          <SectionDivider />
+          <SectionLabel>90-Day Training Load</SectionLabel>
           <FitnessChart data={fitness.series} />
-        </div>
+        </>
       )}
 
-      {/* This week's plan */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-zinc-300">This Week</h2>
-          <a
-            href="/plan"
-            className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-          >
-            Full plan <ChevronRight size={12} />
-          </a>
-        </div>
-        {plan ? (
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {plan.workouts.map((w) => (
+      {/* This week */}
+      <SectionDivider />
+      <SectionLabel>This Week</SectionLabel>
+      {plan ? (
+        <>
+          <div className="flex flex-col">
+            {plan.workouts.map((w, i) => (
               <WorkoutCard
                 key={w.id}
                 workout={w}
                 isToday={w.day_of_week === todayDow}
+                index={i}
                 onMarkComplete={handleMarkComplete}
               />
             ))}
           </div>
-        ) : (
-          <div className="bg-zinc-900 rounded-2xl p-8 border border-zinc-800 text-center">
-            <p className="text-zinc-500 text-sm mb-3">No plan for this week yet.</p>
-            <a
-              href="/plan"
-              className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300 text-sm font-medium transition-colors"
-            >
-              Generate this week's plan <ChevronRight size={14} />
-            </a>
-          </div>
-        )}
-        {plan?.narrative && (
-          <div className="mt-3 bg-zinc-900 rounded-2xl p-4 border border-blue-900/50">
-            <p className="text-xs text-blue-400 font-semibold uppercase tracking-wider mb-1.5">Coach's Note</p>
-            <p className="text-sm text-zinc-300 leading-relaxed">{plan.narrative}</p>
-          </div>
-        )}
-      </div>
+          {plan.narrative && (
+            <div className="mt-6">
+              <p className="text-xs tracking-[0.2em] uppercase mb-2" style={{ color: '#8C7B6B' }}>
+                Coach's Note
+              </p>
+              <p className="text-sm leading-relaxed" style={{ color: '#8C7B6B' }}>
+                {plan.narrative}
+              </p>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="py-4">
+          <p className="text-sm mb-2" style={{ color: '#8C7B6B' }}>No plan for this week yet.</p>
+          <a
+            href="/plan"
+            className="text-sm underline underline-offset-4"
+            style={{ color: '#1A1A1A' }}
+          >
+            Generate this week's plan →
+          </a>
+        </div>
+      )}
 
       {/* Recent activity */}
-      <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-        <h2 className="text-sm font-semibold text-zinc-300 mb-4">Recent Activities</h2>
-        <ActivityFeed activities={activities} />
-      </div>
+      <SectionDivider />
+      <SectionLabel>Recent Activities</SectionLabel>
+      <ActivityFeed activities={activities} />
     </div>
   )
 }

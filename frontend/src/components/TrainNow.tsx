@@ -1,74 +1,53 @@
 import { useState } from 'react'
-import { Play, Timer, Ruler, ChevronDown, ChevronUp } from 'lucide-react'
 import clsx from 'clsx'
 import { trainNow } from '../api/client'
 import type { TrainNowResult } from '../api/client'
 import type { SessionInterval, StructuredSession } from '../types'
 
-function IntervalRow({ step }: { step: SessionInterval }) {
+// ─── Session text display ─────────────────────────────────────────────────────
+
+function IntervalLine({ step }: { step: SessionInterval }) {
   const isRest = step.type === 'rest'
   return (
-    <div className={clsx('flex gap-3', isRest && 'opacity-50')}>
-      <div className="flex flex-col items-center gap-1 pt-0.5 shrink-0">
-        <div className={clsx('w-2 h-2 rounded-full shrink-0', isRest ? 'bg-zinc-600' : 'bg-blue-500')} />
-        <div className="w-px flex-1 bg-zinc-800" />
-      </div>
-      <div className="pb-3 min-w-0">
-        <div className="flex items-baseline gap-2 flex-wrap">
-          {!isRest && step.rep !== undefined && (
-            <span className="text-xs font-semibold text-zinc-300">Rep {step.rep}/{step.total_reps}</span>
-          )}
-          {isRest && <span className="text-xs font-semibold text-zinc-500">Rest</span>}
-          <span className="text-xs text-zinc-500">{step.duration_minutes}min</span>
-          {step.target && !isRest && <span className="text-xs font-mono text-blue-400">{step.target}</span>}
-        </div>
-        <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">{step.notes}</p>
-      </div>
-    </div>
+    <p className={clsx('text-sm leading-relaxed', isRest && 'opacity-50')} style={{ color: '#8C7B6B' }}>
+      {isRest ? (
+        <>Rest — {step.duration_minutes}min</>
+      ) : (
+        <>
+          {step.rep !== undefined && `Rep ${step.rep}/${step.total_reps} — `}
+          {step.duration_minutes}min
+          {step.target && <span className="font-mono"> [{step.target}]</span>}
+          {step.notes && <span> — {step.notes}</span>}
+        </>
+      )}
+    </p>
   )
 }
 
 function SessionView({ session }: { session: StructuredSession }) {
   return (
-    <div className="pt-3 border-t border-zinc-800 mt-2">
+    <div className="mt-4 space-y-1">
       {session.warmup_minutes > 0 && (
-        <div className="flex gap-3 mb-1">
-          <div className="flex flex-col items-center gap-1 pt-0.5 shrink-0">
-            <div className="w-2 h-2 rounded-full bg-emerald-700" />
-            <div className="w-px flex-1 bg-zinc-800" />
-          </div>
-          <div className="pb-3">
-            <div className="flex items-baseline gap-2">
-              <span className="text-xs font-semibold text-emerald-600">Warmup</span>
-              <span className="text-xs text-zinc-500">{session.warmup_minutes}min</span>
-            </div>
-            {session.warmup_notes && <p className="text-xs text-zinc-500 mt-0.5">{session.warmup_notes}</p>}
-          </div>
-        </div>
+        <p className="text-sm leading-relaxed" style={{ color: '#8C7B6B' }}>
+          Warmup — {session.warmup_minutes}min
+          {session.warmup_notes && <span> — {session.warmup_notes}</span>}
+        </p>
       )}
-      {session.intervals.map((step, i) => <IntervalRow key={i} step={step} />)}
+      {session.intervals.map((step, i) => <IntervalLine key={i} step={step} />)}
       {session.cooldown_minutes > 0 && (
-        <div className="flex gap-3">
-          <div className="flex flex-col items-center gap-1 pt-0.5 shrink-0">
-            <div className="w-2 h-2 rounded-full bg-zinc-700" />
-          </div>
-          <div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-xs font-semibold text-zinc-600">Cooldown</span>
-              <span className="text-xs text-zinc-600">{session.cooldown_minutes}min</span>
-            </div>
-            {session.cooldown_notes && <p className="text-xs text-zinc-600 mt-0.5">{session.cooldown_notes}</p>}
-          </div>
-        </div>
+        <p className="text-sm leading-relaxed" style={{ color: '#8C7B6B' }}>
+          Cooldown — {session.cooldown_minutes}min
+          {session.cooldown_notes && <span> — {session.cooldown_notes}</span>}
+        </p>
       )}
     </div>
   )
 }
 
 const SPORTS = [
-  { value: 'CYCLING', label: 'Cycling', emoji: '🚴' },
-  { value: 'RUNNING', label: 'Running', emoji: '🏃' },
-  { value: 'XC_SKIING', label: 'XC Skiing', emoji: '⛷️' },
+  { value: 'CYCLING', label: 'Cycling' },
+  { value: 'RUNNING', label: 'Running' },
+  { value: 'XC_SKIING', label: 'XC Skiing' },
 ]
 
 const DURATIONS = [30, 45, 60, 75, 90, 120]
@@ -78,6 +57,7 @@ interface Props {
 }
 
 export default function TrainNow({ athleteId }: Props) {
+  const [open, setOpen] = useState(false)
   const [sport, setSport] = useState('CYCLING')
   const [mode, setMode] = useState<'time' | 'distance'>('time')
   const [duration, setDuration] = useState(60)
@@ -121,133 +101,145 @@ export default function TrainNow({ athleteId }: Props) {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden">
-      <div className="p-5">
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Train Now</p>
+    <div>
+      {/* Trigger label */}
+      <p className="text-xs tracking-[0.2em] uppercase mb-2 font-normal" style={{ color: '#D62828' }}>
+        Train Now
+      </p>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="text-sm underline underline-offset-4 transition-opacity hover:opacity-70"
+        style={{ color: '#1A1A1A' }}
+      >
+        {open ? 'Close ↑' : 'Train now →'}
+      </button>
 
-        {/* Sport selector */}
-        <div className="flex gap-2 mb-4">
-          {SPORTS.map((s) => (
-            <button
-              key={s.value}
-              onClick={() => setSport(s.value)}
-              className={clsx(
-                'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all border',
-                sport === s.value
-                  ? 'bg-blue-600 border-blue-500 text-white'
-                  : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600',
-              )}
-            >
-              <span>{s.emoji}</span>
-              {s.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Time / distance toggle */}
-        <div className="flex gap-2 mb-4">
-          <button
-            onClick={() => setMode('time')}
-            className={clsx(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
-              mode === 'time'
-                ? 'bg-zinc-700 border-zinc-600 text-white'
-                : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-500 hover:text-zinc-300',
-            )}
-          >
-            <Timer size={12} /> Time
-          </button>
-          <button
-            onClick={() => setMode('distance')}
-            className={clsx(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
-              mode === 'distance'
-                ? 'bg-zinc-700 border-zinc-600 text-white'
-                : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-500 hover:text-zinc-300',
-            )}
-          >
-            <Ruler size={12} /> Distance
-          </button>
-        </div>
-
-        {mode === 'time' ? (
-          <div className="flex gap-2 flex-wrap mb-4">
-            {DURATIONS.map((d) => (
-              <button
-                key={d}
-                onClick={() => setDuration(d)}
-                className={clsx(
-                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-all border',
-                  duration === d
-                    ? 'bg-zinc-700 border-zinc-500 text-white'
-                    : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:text-zinc-200',
-                )}
-              >
-                {d}m
-              </button>
-            ))}
+      {open && (
+        <div className="mt-6 space-y-4">
+          {/* Sport */}
+          <div className="flex items-baseline gap-6">
+            <span className="text-xs tracking-widest uppercase w-20 shrink-0" style={{ color: '#8C7B6B' }}>Sport</span>
+            <div className="flex gap-4">
+              {SPORTS.map((s) => (
+                <button
+                  key={s.value}
+                  onClick={() => setSport(s.value)}
+                  className={clsx(
+                    'text-sm transition-all',
+                    sport === s.value
+                      ? 'font-bold underline underline-offset-4'
+                      : 'hover:underline hover:underline-offset-4',
+                  )}
+                  style={{ color: sport === s.value ? '#1A1A1A' : '#8C7B6B' }}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
           </div>
-        ) : (
-          <div className="mb-4 flex items-center gap-2">
-            <input
-              type="number"
-              min={1}
-              max={200}
-              placeholder="km"
-              value={distance}
-              onChange={(e) => setDistance(e.target.value)}
-              className="w-24 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500"
-            />
-            <span className="text-sm text-zinc-500">km</span>
-          </div>
-        )}
 
-        <button
-          onClick={handleGenerate}
-          disabled={!canGenerate}
-          className={clsx(
-            'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all',
-            canGenerate
-              ? 'bg-blue-600 hover:bg-blue-500 text-white'
-              : 'bg-zinc-800 text-zinc-600 cursor-not-allowed',
+          {/* Mode */}
+          <div className="flex items-baseline gap-6">
+            <span className="text-xs tracking-widest uppercase w-20 shrink-0" style={{ color: '#8C7B6B' }}>By</span>
+            <div className="flex gap-4">
+              {(['time', 'distance'] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMode(m)}
+                  className={clsx(
+                    'text-sm capitalize transition-all',
+                    mode === m
+                      ? 'font-bold underline underline-offset-4'
+                      : 'hover:underline hover:underline-offset-4',
+                  )}
+                  style={{ color: mode === m ? '#1A1A1A' : '#8C7B6B' }}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Duration / distance */}
+          {mode === 'time' ? (
+            <div className="flex items-baseline gap-6">
+              <span className="text-xs tracking-widest uppercase w-20 shrink-0" style={{ color: '#8C7B6B' }}>Duration</span>
+              <div className="flex gap-3 flex-wrap">
+                {DURATIONS.map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => setDuration(d)}
+                    className={clsx(
+                      'text-sm transition-all',
+                      duration === d
+                        ? 'font-bold underline underline-offset-4'
+                        : 'hover:underline hover:underline-offset-4',
+                    )}
+                    style={{ color: duration === d ? '#1A1A1A' : '#8C7B6B' }}
+                  >
+                    {d}m
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-baseline gap-6">
+              <span className="text-xs tracking-widest uppercase w-20 shrink-0" style={{ color: '#8C7B6B' }}>Distance</span>
+              <div className="flex items-baseline gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={200}
+                  placeholder="0"
+                  value={distance}
+                  onChange={(e) => setDistance(e.target.value)}
+                  className="w-16 bg-transparent border-b text-sm text-center focus:outline-none"
+                  style={{ borderColor: '#8C7B6B', color: '#1A1A1A' }}
+                />
+                <span className="text-sm" style={{ color: '#8C7B6B' }}>km</span>
+              </div>
+            </div>
           )}
-        >
-          <Play size={14} className={loading ? 'animate-pulse' : ''} />
-          {loading ? 'Building session…' : 'Generate session'}
-        </button>
 
-        {error && <p className="mt-3 text-xs text-rose-400">{error}</p>}
-      </div>
+          {/* Generate button */}
+          <button
+            onClick={handleGenerate}
+            disabled={!canGenerate}
+            className={clsx(
+              'text-sm underline underline-offset-4 transition-opacity',
+              !canGenerate && 'opacity-30 cursor-not-allowed',
+            )}
+            style={{ color: '#D62828' }}
+          >
+            {loading ? 'Building session…' : 'Generate →'}
+          </button>
+
+          {error && <p className="text-xs" style={{ color: '#D62828' }}>{error}</p>}
+        </div>
+      )}
 
       {/* Result */}
       {result && (
-        <div className="border-t border-zinc-800">
-          {/* Summary bar */}
-          <div className="px-5 py-4 flex items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">
-                  {workoutTypeLabel[result.workout_type] ?? result.workout_type}
-                </span>
-                <span className="text-zinc-600">·</span>
-                <span className="text-xs text-zinc-500">{result.duration_minutes} min</span>
-              </div>
-              <p className="text-sm text-zinc-300 leading-relaxed">{result.narrative}</p>
-            </div>
+        <div className="mt-6">
+          <div className="flex items-baseline gap-4">
+            <span className="text-xs tracking-widest uppercase" style={{ color: '#D62828' }}>
+              {workoutTypeLabel[result.workout_type] ?? result.workout_type}
+            </span>
+            <span className="text-xs" style={{ color: '#8C7B6B' }}>{result.duration_minutes} min</span>
+          </div>
+          <p className="text-sm leading-relaxed mt-1" style={{ color: '#1A1A1A' }}>
+            {result.narrative}
+          </p>
+          {result.session && (
             <button
               onClick={() => setSessionOpen((o) => !o)}
-              className="shrink-0 flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="text-xs mt-2 underline underline-offset-2 transition-opacity hover:opacity-70"
+              style={{ color: '#8C7B6B' }}
             >
-              {sessionOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              {sessionOpen ? 'Hide' : 'Show'} plan
+              {sessionOpen ? 'Hide intervals ↑' : 'Show intervals ↓'}
             </button>
-          </div>
-
-          {sessionOpen && result.session && (
-            <div className="px-5 pb-5">
-              <SessionView session={result.session} />
-            </div>
           )}
+          {sessionOpen && result.session && <SessionView session={result.session} />}
         </div>
       )}
     </div>

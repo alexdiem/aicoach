@@ -1,16 +1,6 @@
 import { format, parseISO } from 'date-fns'
 import type { Activity } from '../types'
 
-const TYPE_ICONS: Record<string, string> = {
-  CYCLING: '🚴',
-  RUNNING: '🏃',
-  XC_SKIING: '⛷️',
-  HIKING: '🥾',
-  CLIMBING: '🧗',
-  STRENGTH: '💪',
-  OTHER: '🏋️',
-}
-
 function formatDuration(seconds: number) {
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
@@ -29,7 +19,7 @@ interface Props {
 export default function ActivityFeed({ activities }: Props) {
   if (activities.length === 0) {
     return (
-      <p className="text-zinc-500 text-sm py-4 text-center">
+      <p className="text-sm py-4" style={{ color: '#8C7B6B' }}>
         No activities yet. Connect Garmin and sync from Settings.
       </p>
     )
@@ -37,46 +27,36 @@ export default function ActivityFeed({ activities }: Props) {
 
   return (
     <div className="flex flex-col">
-      {activities.map((a, i) => (
-        <div
-          key={a.id}
-          className={`flex items-center gap-3 py-3 ${i < activities.length - 1 ? 'border-b border-zinc-800' : ''}`}
-        >
-          <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center text-base shrink-0">
-            {TYPE_ICONS[a.activity_type] ?? '🏋️'}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-zinc-100 capitalize">
+      {activities.map((a) => {
+        const parts: string[] = [
+          format(parseISO(a.start_time), 'EEE d MMM'),
+          formatDuration(a.duration_seconds),
+        ]
+        const dist = formatDistance(a.distance_meters)
+        if (dist) parts.push(dist)
+        if (a.elevation_gain_meters) parts.push(`↑${Math.round(a.elevation_gain_meters)}m`)
+        if (a.training_stress_score) parts.push(`${Math.round(a.training_stress_score)} TSS`)
+        if (a.avg_heart_rate) parts.push(`${Math.round(a.avg_heart_rate)} bpm`)
+
+        return (
+          <div
+            key={a.id}
+            className="flex items-baseline justify-between py-3 border-b border-gray-200 last:border-b-0"
+          >
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-bold capitalize" style={{ color: '#1A1A1A' }}>
                 {a.activity_type.replace('_', ' ').toLowerCase()}
               </span>
               {a.sport_category === 'CASUAL' && (
-                <span className="text-xs text-zinc-500 bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded-full">
-                  casual
-                </span>
+                <span className="ml-2 text-xs" style={{ color: '#8C7B6B' }}>casual</span>
               )}
             </div>
-            <div className="text-xs text-zinc-500 mt-0.5">
-              {format(parseISO(a.start_time), 'EEE d MMM')}
-              {' · '}
-              {formatDuration(a.duration_seconds)}
-              {formatDistance(a.distance_meters) && ` · ${formatDistance(a.distance_meters)}`}
-              {a.elevation_gain_meters && ` · ↑${Math.round(a.elevation_gain_meters)}m`}
-            </div>
+            <p className="text-xs text-right shrink-0 ml-4" style={{ color: '#8C7B6B' }}>
+              {parts.join(' · ')}
+            </p>
           </div>
-          <div className="text-right shrink-0">
-            {a.training_stress_score ? (
-              <div className="text-sm font-bold text-blue-400 tabular-nums">
-                {Math.round(a.training_stress_score)}
-                <span className="text-zinc-600 text-xs font-normal ml-0.5">TSS</span>
-              </div>
-            ) : null}
-            {a.avg_heart_rate ? (
-              <div className="text-xs text-zinc-500 tabular-nums">{Math.round(a.avg_heart_rate)} bpm</div>
-            ) : null}
-          </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

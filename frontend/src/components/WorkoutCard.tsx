@@ -1,107 +1,75 @@
 import clsx from 'clsx'
 import type { PlannedWorkout } from '../types'
 
-const SPORT_ICONS: Record<string, string> = {
-  CYCLING: '🚴',
-  RUNNING: '🏃',
-  XC_SKIING: '⛷️',
-  STRENGTH: '💪',
-}
-
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-
-const TYPE_STYLES: Record<string, { dot: string; badge: string }> = {
-  EASY:      { dot: 'bg-emerald-500', badge: 'bg-emerald-950 text-emerald-400 border-emerald-900' },
-  RECOVERY:  { dot: 'bg-zinc-500',    badge: 'bg-zinc-800 text-zinc-400 border-zinc-700' },
-  TEMPO:     { dot: 'bg-yellow-500',  badge: 'bg-yellow-950 text-yellow-400 border-yellow-900' },
-  THRESHOLD: { dot: 'bg-orange-500',  badge: 'bg-orange-950 text-orange-400 border-orange-900' },
-  VO2MAX:    { dot: 'bg-rose-500',    badge: 'bg-rose-950 text-rose-400 border-rose-900' },
-  LONG:      { dot: 'bg-blue-500',    badge: 'bg-blue-950 text-blue-400 border-blue-900' },
-  STRENGTH:  { dot: 'bg-violet-500',  badge: 'bg-violet-950 text-violet-400 border-violet-900' },
-}
-
-const fallbackStyle = { dot: 'bg-zinc-600', badge: 'bg-zinc-800 text-zinc-400 border-zinc-700' }
+const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
 
 interface Props {
   workout: PlannedWorkout
   isToday?: boolean
+  index?: number
   onMarkComplete?: (workout: PlannedWorkout) => void
 }
 
-export default function WorkoutCard({ workout, isToday, onMarkComplete }: Props) {
-  const icon = SPORT_ICONS[workout.sport] ?? '🏋️'
-  const style = TYPE_STYLES[workout.workout_type] ?? fallbackStyle
+export default function WorkoutCard({ workout, isToday, index = 0, onMarkComplete }: Props) {
   const dayLabel = DAY_LABELS[workout.day_of_week] ?? ''
+  const num = String(index + 1).padStart(2, '0')
 
   return (
     <div
       className={clsx(
-        'rounded-2xl p-4 border flex flex-col gap-3 min-w-[156px] max-w-[180px] transition-all',
-        isToday
-          ? 'bg-zinc-900 border-blue-500/60 shadow-[0_0_0_1px_rgba(59,130,246,0.15)]'
-          : 'bg-zinc-900 border-zinc-800',
-        workout.is_completed && 'opacity-50',
+        'flex items-start gap-4 py-4 border-b border-gray-200 last:border-b-0',
+        workout.is_completed && 'opacity-40',
       )}
     >
-      <div className="flex items-center justify-between">
-        <span className={clsx('text-xs font-semibold uppercase tracking-wider', isToday ? 'text-blue-400' : 'text-zinc-500')}>
-          {isToday ? 'Today' : dayLabel}
-        </span>
-        {workout.is_completed && (
-          <span className="text-emerald-400 text-xs font-semibold">✓ Done</span>
+      {/* Number / today dot */}
+      <div className="w-8 shrink-0 flex items-center justify-center pt-0.5">
+        {isToday ? (
+          <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: '#D62828' }} />
+        ) : (
+          <span className="text-xs tabular-nums font-normal" style={{ color: '#8C7B6B' }}>{num}</span>
         )}
       </div>
 
-      <div className="flex items-center gap-2.5">
-        <span className="text-2xl leading-none">{icon}</span>
-        <div className="flex flex-col gap-1">
-          <span className={clsx('text-xs px-2 py-0.5 rounded-full border font-medium', style.badge)}>
-            {workout.workout_type}
-          </span>
-        </div>
-      </div>
-
-      <div>
-        <p className="text-sm font-bold text-white">
-          {workout.duration_minutes}
-          <span className="text-zinc-400 font-normal text-xs ml-1">min</span>
-          {workout.intensity_zone && (
-            <span className="text-zinc-500 font-normal text-xs ml-1.5">{workout.intensity_zone}</span>
-          )}
+      {/* Content */}
+      <div className="flex-1">
+        <p className="text-sm font-bold leading-tight" style={{ color: '#1A1A1A' }}>
+          {dayLabel} — {workout.workout_type} {workout.sport.replace('_', ' ')}{' '}
+          <span className="font-normal" style={{ color: '#8C7B6B' }}>{workout.duration_minutes}min</span>
         </p>
-        <p className="text-xs text-zinc-500 mt-1 line-clamp-2 leading-relaxed">{workout.purpose}</p>
+        {workout.purpose && (
+          <p className="text-xs mt-0.5 leading-snug" style={{ color: '#8C7B6B' }}>
+            {workout.purpose}
+          </p>
+        )}
+        {workout.terrain_notes && (
+          <p className="text-xs mt-0.5" style={{ color: '#8C7B6B' }}>
+            {workout.terrain_notes.slice(0, 80)}
+          </p>
+        )}
+        {workout.compliance_score !== null && (
+          <p className="text-xs mt-1" style={{ color: '#8C7B6B' }}>
+            Compliance: {workout.compliance_score}%
+          </p>
+        )}
+        {!workout.is_completed && onMarkComplete && (
+          <button
+            onClick={() => onMarkComplete(workout)}
+            className="text-xs mt-1 underline underline-offset-2 transition-opacity hover:opacity-70"
+            style={{ color: '#1A1A1A' }}
+          >
+            Mark complete →
+          </button>
+        )}
+        {workout.is_completed && (
+          <p className="text-xs mt-1" style={{ color: '#8C7B6B' }}>Done</p>
+        )}
       </div>
 
-      {workout.terrain_notes && (
-        <p className="text-xs text-amber-400/80 line-clamp-1">⛰ {workout.terrain_notes.slice(0, 60)}</p>
-      )}
-
-      {workout.compliance_score !== null && (
-        <div className="flex items-center gap-1.5">
-          <div className={clsx('w-1.5 h-1.5 rounded-full', style.dot)} />
-          <span
-            className={clsx(
-              'text-xs font-semibold',
-              workout.compliance_score >= 80
-                ? 'text-emerald-400'
-                : workout.compliance_score >= 60
-                  ? 'text-yellow-400'
-                  : 'text-rose-400',
-            )}
-          >
-            {workout.compliance_score}%
-          </span>
-          <span className="text-zinc-600 text-xs">compliance</span>
-        </div>
-      )}
-
-      {!workout.is_completed && onMarkComplete && (
-        <button
-          onClick={() => onMarkComplete(workout)}
-          className="text-xs text-blue-400 hover:text-blue-300 transition-colors font-medium text-left"
-        >
-          Mark complete →
-        </button>
+      {/* Intensity zone */}
+      {workout.intensity_zone && (
+        <span className="text-xs shrink-0" style={{ color: '#8C7B6B' }}>
+          {workout.intensity_zone}
+        </span>
       )}
     </div>
   )

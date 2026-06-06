@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { type ReactNode, useState } from 'react'
-import { LayoutDashboard, CalendarDays, Map, Settings, Bot } from 'lucide-react'
+import { LayoutDashboard, CalendarDays, Map, Settings } from 'lucide-react'
 import clsx from 'clsx'
 import { getModelPref, setModelPref, type ModelPref } from '../api/client'
 
@@ -20,60 +20,65 @@ export default function Layout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen flex bg-zinc-950">
-      <nav className="w-52 shrink-0 bg-zinc-900 border-r border-zinc-800 flex flex-col p-3">
-        <div className="px-3 py-4 mb-2">
-          <span className="text-lg font-bold tracking-tight text-white">ai<span className="text-blue-400">coach</span></span>
-        </div>
-        <div className="flex flex-col gap-0.5">
-          {nav.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === '/'}
-              className={({ isActive }) =>
-                clsx(
-                  'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all',
-                  isActive
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800',
-                )
-              }
-            >
-              <Icon size={16} strokeWidth={1.75} />
-              {label}
-            </NavLink>
-          ))}
-        </div>
+    <div className="min-h-screen" style={{ backgroundColor: '#F5F0EB' }}>
+      <header className="sticky top-0 z-10 border-b border-gray-200" style={{ backgroundColor: '#F5F0EB' }}>
+        <div className="max-w-[680px] mx-auto px-6 h-12 flex items-center justify-between">
+          {/* Logo */}
+          <span className="serif italic text-base font-normal" style={{ color: '#1A1A1A' }}>
+            aicoach
+          </span>
 
-        {/* Model selector */}
-        <div className="mt-auto pt-4 border-t border-zinc-800">
-          <div className="px-1 mb-1.5 flex items-center gap-1.5 text-[10px] text-zinc-600 uppercase tracking-wider">
-            <Bot size={10} /> AI Model
-          </div>
-          <div className="flex rounded-lg overflow-hidden border border-zinc-700 text-xs font-medium">
-            {(['haiku', 'sonnet'] as ModelPref[]).map((m) => (
-              <button
-                key={m}
-                onClick={() => toggleModel(m)}
-                className={clsx(
-                  'flex-1 py-1.5 transition-colors capitalize',
-                  model === m
-                    ? 'bg-zinc-700 text-white'
-                    : 'text-zinc-500 hover:text-zinc-300',
-                )}
+          {/* Nav links */}
+          <nav className="flex items-center gap-6">
+            {nav.map(({ to, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === '/'}
+                className={({ isActive }) =>
+                  clsx(
+                    'text-xs tracking-wide transition-colors',
+                    isActive
+                      ? 'underline underline-offset-4'
+                      : 'hover:underline hover:underline-offset-4',
+                  )
+                }
+                style={{ color: '#1A1A1A' }}
               >
-                {m}
-              </button>
+                {label}
+              </NavLink>
             ))}
+          </nav>
+
+          {/* Model selector */}
+          <div className="flex items-center gap-1 text-xs" style={{ color: '#8C7B6B' }}>
+            {'[ '}
+            {(['haiku', 'sonnet'] as ModelPref[]).map((m, i) => (
+              <span key={m}>
+                {i > 0 && <span className="mx-1">|</span>}
+                <button
+                  onClick={() => toggleModel(m)}
+                  className={clsx(
+                    'capitalize transition-colors',
+                    model === m
+                      ? 'underline underline-offset-4'
+                      : 'hover:underline hover:underline-offset-4',
+                  )}
+                  style={{ color: model === m ? '#1A1A1A' : '#8C7B6B' }}
+                >
+                  {m}
+                </button>
+              </span>
+            ))}
+            {' ]'}
           </div>
-          <p className="mt-1.5 px-1 text-[10px] text-zinc-600 leading-snug">
-            {model === 'haiku' ? 'Fast · lower cost' : 'Smarter · higher cost'}
-          </p>
         </div>
-      </nav>
-      <main className="flex-1 overflow-auto">
-        <div className="max-w-6xl mx-auto px-6 py-8">{children}</div>
+      </header>
+
+      <main>
+        <div className="max-w-[680px] mx-auto px-6 py-12">
+          {children}
+        </div>
       </main>
     </div>
   )
