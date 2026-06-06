@@ -25,3 +25,4 @@ frontend/.env
 # OS
 .DS_Store
 *.swp
+frontend/package-lock.json
