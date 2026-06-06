@@ -73,6 +73,7 @@ export interface PlannedWorkout {
   purpose: string
   terrain_notes: string | null
   is_completed: boolean
+  is_unstructured: boolean
   compliance_score: number | null
   ai_compliance_notes: string | null
 }

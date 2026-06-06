@@ -37,6 +37,7 @@ class PlannedWorkout(Base):
     terrain_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_unstructured: Mapped[bool] = mapped_column(Boolean, default=False)  # athlete will do the sport freely, no specific effort
     completed_activity_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("activities.id"), nullable=True)
     compliance_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     ai_compliance_notes: Mapped[str | None] = mapped_column(Text, nullable=True)

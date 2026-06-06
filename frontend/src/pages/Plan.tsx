@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getAthleteId, getCurrentPlan, generatePlan, markWorkoutComplete } from '../api/client'
+import { getAthleteId, getCurrentPlan, generatePlan, markWorkoutComplete, setWorkoutUnstructured } from '../api/client'
 import SchedulePicker, { toApiSchedule } from '../components/SchedulePicker'
 import type { PlannedWorkout, WeeklyPlan } from '../types'
 
@@ -58,6 +58,12 @@ export default function Plan() {
 
   async function handleMarkComplete(workout: PlannedWorkout) {
     await markWorkoutComplete(workout.id, athleteId)
+    const updated = await getCurrentPlan(athleteId)
+    setPlan(updated)
+  }
+
+  async function handleToggleUnstructured(workout: PlannedWorkout) {
+    await setWorkoutUnstructured(workout.id, athleteId, !workout.is_unstructured)
     const updated = await getCurrentPlan(athleteId)
     setPlan(updated)
   }
@@ -199,7 +205,7 @@ export default function Plan() {
           {plan.workouts.map((w) => (
             <div
               key={w.id}
-              className="bg-gray-900 rounded-xl p-4 border border-gray-800"
+              className={`bg-gray-900 rounded-xl p-4 border ${w.is_unstructured ? 'border-yellow-900/50' : 'border-gray-800'}`}
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
@@ -208,16 +214,28 @@ export default function Plan() {
                     <span className="font-semibold text-white">
                       {DAYS[w.day_of_week]} — {w.sport.replace('_', ' ')}
                     </span>
-                    <span className="text-xs px-2 py-0.5 bg-gray-800 rounded text-gray-400">
-                      {w.workout_type}
-                    </span>
-                    {w.intensity_zone && (
-                      <span className="text-xs text-blue-400">{w.intensity_zone}</span>
+                    {w.is_unstructured ? (
+                      <span className="text-xs px-2 py-0.5 bg-yellow-900/40 rounded text-yellow-400 border border-yellow-800/50">
+                        free ride
+                      </span>
+                    ) : (
+                      <>
+                        <span className="text-xs px-2 py-0.5 bg-gray-800 rounded text-gray-400">
+                          {w.workout_type}
+                        </span>
+                        {w.intensity_zone && (
+                          <span className="text-xs text-blue-400">{w.intensity_zone}</span>
+                        )}
+                      </>
                     )}
                     <span className="text-sm text-gray-400">{w.duration_minutes}min</span>
                   </div>
-                  <p className="text-sm text-gray-300">{w.purpose}</p>
-                  {w.terrain_notes && (
+                  {w.is_unstructured ? (
+                    <p className="text-sm text-gray-500 italic">No structured effort — enjoy the ride and go by feel.</p>
+                  ) : (
+                    <p className="text-sm text-gray-300">{w.purpose}</p>
+                  )}
+                  {!w.is_unstructured && w.terrain_notes && (
                     <p className="text-xs text-amber-400 mt-2">🗺 {w.terrain_notes}</p>
                   )}
                   {w.ai_compliance_notes && (
@@ -229,6 +247,19 @@ export default function Plan() {
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   {w.compliance_score !== null && (
                     <div className="text-sm font-bold text-green-400">{w.compliance_score}%</div>
+                  )}
+                  {!w.is_completed && (
+                    <button
+                      onClick={() => handleToggleUnstructured(w)}
+                      title={w.is_unstructured ? 'Switch back to structured workout' : 'Mark as free ride / no specific effort'}
+                      className={`text-xs px-3 py-1.5 rounded border transition-colors ${
+                        w.is_unstructured
+                          ? 'text-yellow-400 border-yellow-800 hover:border-yellow-600'
+                          : 'text-gray-500 border-gray-700 hover:text-gray-300 hover:border-gray-500'
+                      }`}
+                    >
+                      {w.is_unstructured ? 'Go structured' : 'Free ride'}
+                    </button>
                   )}
                   {w.is_completed ? (
                     <span className="text-green-400 text-sm">✓ Done</span>

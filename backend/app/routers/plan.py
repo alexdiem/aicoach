@@ -197,6 +197,21 @@ async def mark_workout_complete(
     return {"workout_id": workout_id, "completed": True, "compliance_score": workout.compliance_score}
 
 
+@router.patch("/workouts/{workout_id}/unstructured")
+async def set_workout_unstructured(
+    workout_id: int,
+    is_unstructured: bool,
+    athlete: Athlete = Depends(get_athlete_or_404),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
+    workout = result.scalar_one_or_none()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found.")
+    workout.is_unstructured = is_unstructured
+    return {"workout_id": workout_id, "is_unstructured": is_unstructured}
+
+
 async def _serialize_plan(plan: WeeklyPlan, db: AsyncSession) -> dict:
     workouts_result = await db.execute(
         select(PlannedWorkout).where(PlannedWorkout.plan_id == plan.id)
@@ -221,6 +236,7 @@ async def _serialize_plan(plan: WeeklyPlan, db: AsyncSession) -> dict:
                 "purpose": w.purpose,
                 "terrain_notes": w.terrain_notes,
                 "is_completed": w.is_completed,
+                "is_unstructured": w.is_unstructured,
                 "compliance_score": w.compliance_score,
                 "ai_compliance_notes": w.ai_compliance_notes,
             }
