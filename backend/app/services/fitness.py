@@ -157,6 +157,64 @@ def cross_sport_aerobic_transfer(
     return effective_ctl
 
 
+_HRV_STATUS_SCORE = {"balanced": 1.0, "unbalanced": 0.5, "low": 0.2}
+
+
+def calculate_readiness(tsb: float, wellness_rows: list) -> dict:
+    """
+    Combine TSB + recent wellness signals into a 0-100 readiness score.
+
+    wellness_rows: list of DailyWellness ORM objects, most-recent first.
+    """
+    tsb_score = max(0.0, min(1.0, (tsb + 30) / 40))
+    tsb_points = tsb_score * 40
+
+    bb_points = 0.0
+    today_bb = next((w for w in wellness_rows if w.body_battery_max is not None), None)
+    if today_bb:
+        bb_points = (today_bb.body_battery_max / 100) * 25
+
+    hrv_points = 0.0
+    today_hrv = next((w for w in wellness_rows if w.hrv_status is not None), None)
+    if today_hrv:
+        hrv_points = _HRV_STATUS_SCORE.get((today_hrv.hrv_status or "").lower(), 0.6) * 20
+
+    sleep_points = 0.0
+    today_sleep = next((w for w in wellness_rows if w.sleep_score is not None), None)
+    if today_sleep:
+        sleep_points = (today_sleep.sleep_score / 100) * 15
+
+    max_possible = 40 + (25 if today_bb else 0) + (20 if today_hrv else 0) + (15 if today_sleep else 0)
+    total = tsb_points + bb_points + hrv_points + sleep_points
+    score = round(total / max_possible * 100)
+
+    if score >= 80:
+        zone, guidance = "Peak readiness", "Your body is primed — a quality or race-pace effort will land well today."
+    elif score >= 60:
+        zone, guidance = "Good to train", "You're recovered and ready. Stick to the plan and execute well."
+    elif score >= 40:
+        zone, guidance = "Moderate fatigue", "You can train, but keep intensity controlled. Prioritise sleep tonight."
+    elif score >= 20:
+        zone, guidance = "Carrying fatigue", "Your body is under load. An easy spin or rest day pays more than pushing."
+    else:
+        zone, guidance = "Rest recommended", "Multiple recovery signals are low. Rest or very light movement only."
+
+    signals: dict = {}
+    if today_bb:
+        signals["body_battery"] = today_bb.body_battery_max
+    if today_hrv:
+        signals["hrv_status"] = today_hrv.hrv_status
+    if today_sleep:
+        signals["sleep_score"] = today_sleep.sleep_score
+        if today_sleep.sleep_duration_seconds:
+            signals["sleep_hours"] = round(today_sleep.sleep_duration_seconds / 3600, 1)
+    rhr_row = next((w for w in wellness_rows if w.resting_heart_rate is not None), None)
+    if rhr_row:
+        signals["resting_hr"] = rhr_row.resting_heart_rate
+
+    return {"score": score, "zone": zone, "guidance": guidance, "signals": signals}
+
+
 def estimate_vo2max_trend(activities: list["Activity"], sport: str) -> list[dict]:
     """
     Extracts Garmin-provided VO2max estimates from raw activity data.

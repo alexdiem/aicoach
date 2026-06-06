@@ -6,6 +6,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import Base, engine
+from app.models import wellness as _wellness_model  # noqa: F401 — ensures table is registered
 from app.routers import activities, athlete, auth, garmin_webhook, plan, routes
 
 

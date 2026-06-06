@@ -104,6 +104,54 @@ class GarminClient:
         except Exception:
             return None
 
+    async def get_body_battery(self, target_date: date) -> list[dict] | None:
+        """Intraday body battery readings for a given date."""
+        client = self._get()
+        try:
+            return await _run_sync(client.get_body_battery, target_date.isoformat())
+        except Exception:
+            return None
+
+
+def parse_wellness(
+    stats: dict | None,
+    hrv: dict | None,
+    sleep: dict | None,
+    body_battery: list | None,
+) -> dict:
+    """Normalise raw Garmin wellness API responses into a flat dict."""
+    out: dict = {}
+
+    if stats:
+        out["resting_heart_rate"] = stats.get("restingHeartRate")
+        out["avg_stress_level"] = stats.get("averageStressLevel")
+
+    if hrv:
+        hrv_summary = hrv.get("hrvSummary") or {}
+        out["hrv_last_night_avg"] = hrv_summary.get("lastNight") or hrv_summary.get("lastNightAvg")
+        status = hrv_summary.get("status") or hrv.get("hrvStatus")
+        out["hrv_status"] = str(status).capitalize() if status else None
+
+    if sleep:
+        daily = sleep.get("dailySleepDTO") or sleep
+        out["sleep_score"] = daily.get("sleepScores", {}).get("overall") if isinstance(daily.get("sleepScores"), dict) else daily.get("sleepScore")
+        duration = daily.get("sleepTimeSeconds") or daily.get("sleepDuration")
+        out["sleep_duration_seconds"] = float(duration) if duration else None
+
+    if body_battery:
+        charged = [e.get("charged") for e in body_battery if e.get("charged") is not None]
+        drained = [e.get("drained") for e in body_battery if e.get("drained") is not None]
+        values = [e.get("value") for e in body_battery if e.get("value") is not None]
+        if values:
+            out["body_battery_max"] = max(values)
+            out["body_battery_min"] = min(values)
+        elif charged or drained:
+            all_vals = charged + drained
+            out["body_battery_max"] = max(all_vals)
+            out["body_battery_min"] = min(all_vals)
+
+    return out
+
 
 # Module-level singleton — one client per server process
 _garmin_client: GarminClient | None = None
