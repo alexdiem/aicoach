@@ -131,7 +131,7 @@ async def get_current_plan(athlete_id: int, db: AsyncSession = Depends(get_db)):
         .where(WeeklyPlan.athlete_id == athlete_id, WeeklyPlan.week_start == monday)
         .order_by(desc(WeeklyPlan.created_at))
     )
-    plan = result.scalar_one_or_none()
+    plan = result.scalars().first()
     if not plan:
         return None
     return await _serialize_plan(plan, db)
