@@ -3,5 +3,23 @@
 @tailwind utilities;
 
 body {
-  @apply bg-gray-950 text-gray-100 antialiased;
+  @apply antialiased;
+  background-color: #0D1117;
+  color: #E6EDF3;
+}
+
+/* Scrollbar styling for dark theme */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #30363D;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #484F58;
 }

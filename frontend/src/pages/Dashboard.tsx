@@ -1,20 +1,61 @@
 import { useEffect, useState } from 'react'
-import { TrendingUp, TrendingDown, Minus, ChevronRight, Moon, Heart, Zap, Battery } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, Moon, Heart, Zap, Battery, ChevronRight } from 'lucide-react'
 import clsx from 'clsx'
 import { getAthleteId, getActivities, getFitnessMetrics, getCurrentPlan, markWorkoutComplete } from '../api/client'
-import FitnessChart from '../components/FitnessChart'
-import ActivityFeed from '../components/ActivityFeed'
 import WorkoutCard from '../components/WorkoutCard'
 import TrainNow from '../components/TrainNow'
+import ActivityFeed from '../components/ActivityFeed'
 import type { Activity, FitnessMetrics, PlannedWorkout, WeeklyPlan } from '../types'
 
-// ─── Readiness ring ──────────────────────────────────────────────────────────
+// ─── Coach avatar ─────────────────────────────────────────────────────────────
 
-function ReadinessRing({ score, zone }: { score: number; zone: string }) {
-  const r = 44
-  const circ = 2 * Math.PI * r
-  const filled = (score / 100) * circ
+function CoachAvatar() {
+  return (
+    <div
+      className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold"
+      style={{ backgroundColor: '#58A6FF', color: '#0D1117' }}
+    >
+      AC
+    </div>
+  )
+}
 
+// ─── Chat bubble ──────────────────────────────────────────────────────────────
+
+function CoachBubble({ text }: { text: string }) {
+  return (
+    <div
+      className="rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm max-w-xs"
+      style={{ backgroundColor: '#1C2128', color: '#E6EDF3' }}
+    >
+      {text}
+    </div>
+  )
+}
+
+// ─── Chat turn (bubble + optional card below) ─────────────────────────────────
+
+function ChatTurn({ text, children }: { text: string; children?: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {/* Avatar + bubble row */}
+      <div className="flex items-start gap-2">
+        <CoachAvatar />
+        <CoachBubble text={text} />
+      </div>
+      {/* Attached card — indented to align with bubble */}
+      {children && (
+        <div className="ml-9">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Readiness card ───────────────────────────────────────────────────────────
+
+function ReadinessCard({ score, zone, guidance }: { score: number; zone: string; guidance: string }) {
   const color =
     score >= 80 ? '#22c55e'
     : score >= 60 ? '#3b82f6'
@@ -22,111 +63,178 @@ function ReadinessRing({ score, zone }: { score: number; zone: string }) {
     : score >= 20 ? '#f97316'
     : '#ef4444'
 
+  const r = 28
+  const circ = 2 * Math.PI * r
+  const filled = (score / 100) * circ
+
   return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="relative w-28 h-28">
-        <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r={r} fill="none" stroke="#27272a" strokeWidth="10" />
+    <div
+      className="rounded-xl border p-3 flex items-center gap-3"
+      style={{ backgroundColor: '#161B22', borderColor: '#30363D' }}
+    >
+      {/* Mini ring */}
+      <div className="relative w-14 h-14 shrink-0">
+        <svg className="w-full h-full -rotate-90" viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r={r} fill="none" stroke="#21262D" strokeWidth="6" />
           <circle
-            cx="50" cy="50" r={r}
+            cx="32" cy="32" r={r}
             fill="none"
             stroke={color}
-            strokeWidth="10"
+            strokeWidth="6"
             strokeLinecap="round"
             strokeDasharray={`${filled} ${circ}`}
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-bold text-white tabular-nums">{score}</span>
-          <span className="text-[10px] text-zinc-500 uppercase tracking-wide">/ 100</span>
+          <span className="text-sm font-bold tabular-nums" style={{ color: '#E6EDF3' }}>{score}</span>
         </div>
       </div>
-      <span className="text-sm font-semibold" style={{ color }}>{zone}</span>
-    </div>
-  )
-}
-
-// ─── Signal chips ─────────────────────────────────────────────────────────────
-
-function SignalChip({
-  icon: Icon,
-  label,
-  value,
-  sub,
-  good,
-}: {
-  icon: React.ElementType
-  label: string
-  value: string
-  sub?: string
-  good?: boolean | null
-}) {
-  return (
-    <div className="flex items-center gap-2.5 bg-zinc-800/60 rounded-xl px-3 py-2.5">
-      <div className={clsx('w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
-        good === true ? 'bg-emerald-900/60' : good === false ? 'bg-rose-900/60' : 'bg-zinc-700')}>
-        <Icon size={13} className={good === true ? 'text-emerald-400' : good === false ? 'text-rose-400' : 'text-zinc-400'} />
-      </div>
-      <div className="min-w-0">
-        <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{label}</p>
-        <p className="text-sm font-semibold text-white leading-tight">{value}</p>
-        {sub && <p className="text-[10px] text-zinc-500">{sub}</p>}
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold mb-0.5" style={{ color }}>
+          {zone}
+        </p>
+        <p className="text-[11px] leading-relaxed" style={{ color: '#8B949E' }}>{guidance}</p>
       </div>
     </div>
   )
 }
 
-// ─── Training load card ───────────────────────────────────────────────────────
+// ─── Recovery signals card ────────────────────────────────────────────────────
 
-function LoadMetric({
-  label,
-  value,
-  description,
-  trend,
+function SignalRow({
+  signals,
 }: {
-  label: string
-  value: number
-  description: string
-  trend?: 'up' | 'down' | 'flat'
+  signals: { sleep_score?: number; sleep_hours?: number; hrv_status?: string; body_battery?: number; resting_hr?: number }
 }) {
-  const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Minus
-  const trendColor = trend === 'up' ? 'text-emerald-400' : trend === 'down' ? 'text-rose-400' : 'text-zinc-500'
+  const items: Array<{ icon: React.ElementType; label: string; value: string; good?: boolean | null }> = []
+
+  if (signals.sleep_score != null)
+    items.push({
+      icon: Moon,
+      label: 'Sleep',
+      value: `${signals.sleep_score}${signals.sleep_hours ? ` · ${signals.sleep_hours}h` : ''}`,
+      good: signals.sleep_score >= 70 ? true : signals.sleep_score < 50 ? false : null,
+    })
+
+  if (signals.hrv_status)
+    items.push({
+      icon: Heart,
+      label: 'HRV',
+      value: signals.hrv_status,
+      good: signals.hrv_status.toLowerCase() === 'balanced' ? true : signals.hrv_status.toLowerCase() === 'low' ? false : null,
+    })
+
+  if (signals.body_battery != null)
+    items.push({
+      icon: Battery,
+      label: 'Battery',
+      value: `${signals.body_battery}%`,
+      good: signals.body_battery >= 60 ? true : signals.body_battery < 30 ? false : null,
+    })
+
+  if (signals.resting_hr != null)
+    items.push({ icon: Zap, label: 'RHR', value: `${Math.round(signals.resting_hr)} bpm` })
+
+  if (items.length === 0) return null
 
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-zinc-500 uppercase tracking-wider">{label}</span>
-        {trend && <TrendIcon size={12} className={trendColor} />}
-      </div>
-      <p className="text-2xl font-bold text-white tabular-nums">{Math.round(value)}</p>
-      <p className="text-xs text-zinc-400 leading-snug">{description}</p>
+    <div
+      className="rounded-xl border p-2.5 flex gap-2"
+      style={{ backgroundColor: '#161B22', borderColor: '#30363D' }}
+    >
+      {items.map(({ icon: Icon, label, value, good }) => (
+        <div key={label} className="flex-1 flex flex-col items-center gap-1">
+          <div
+            className="w-6 h-6 rounded-md flex items-center justify-center"
+            style={{
+              backgroundColor:
+                good === true ? 'rgba(34,197,94,0.15)'
+                : good === false ? 'rgba(239,68,68,0.15)'
+                : '#21262D',
+            }}
+          >
+            <Icon
+              size={12}
+              className={
+                good === true ? 'text-emerald-400'
+                : good === false ? 'text-rose-400'
+                : 'text-[#8B949E]'
+              }
+            />
+          </div>
+          <p className="text-[9px] uppercase tracking-wider text-[#484F58]">{label}</p>
+          <p className="text-[11px] font-semibold text-center" style={{ color: '#E6EDF3' }}>{value}</p>
+        </div>
+      ))}
     </div>
   )
 }
+
+// ─── Load card ────────────────────────────────────────────────────────────────
+
+function LoadCard({
+  ctl, atl, tsb,
+  ctlDesc, atlDesc, tsbDesc,
+  ctlTrendDir,
+}: {
+  ctl: number; atl: number; tsb: number
+  ctlDesc: string; atlDesc: string; tsbDesc: string
+  ctlTrendDir: 'up' | 'down' | 'flat'
+}) {
+  const metrics = [
+    { label: 'CTL', sub: 'Fitness', value: ctl, desc: ctlDesc, trend: ctlTrendDir },
+    { label: 'ATL', sub: 'Fatigue', value: atl, desc: atlDesc, trend: (atl > ctl * 1.15 ? 'up' : atl < ctl * 0.8 ? 'down' : 'flat') as 'up' | 'down' | 'flat' },
+    { label: 'TSB', sub: 'Form', value: tsb, desc: tsbDesc, trend: (tsb >= 0 ? 'up' : 'down') as 'up' | 'down' | 'flat' },
+  ]
+
+  return (
+    <div
+      className="rounded-xl border p-3 grid grid-cols-3 divide-x"
+      style={{ backgroundColor: '#161B22', borderColor: '#30363D', divideColor: '#30363D' }}
+    >
+      {metrics.map(({ label, sub, value, trend }, i) => {
+        const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Minus
+        const trendColor = trend === 'up' ? '#22c55e' : trend === 'down' ? '#ef4444' : '#484F58'
+        return (
+          <div key={label} className={clsx('flex flex-col gap-0.5', i > 0 && 'pl-3')} style={i > 0 ? { borderLeft: '1px solid #30363D' } : undefined}>
+            <div className="flex items-center justify-between">
+              <span className="text-[9px] uppercase tracking-wider text-[#484F58]">{label}</span>
+              <TrendIcon size={10} style={{ color: trendColor }} />
+            </div>
+            <p className="text-lg font-bold tabular-nums" style={{ color: '#E6EDF3' }}>{Math.round(value)}</p>
+            <p className="text-[9px] leading-tight" style={{ color: '#8B949E' }}>{sub}</p>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Helper fns ───────────────────────────────────────────────────────────────
 
 function tsbContext(tsb: number): string {
-  if (tsb >= 10) return 'Fresh and race-ready — great time to target a quality effort.'
-  if (tsb >= 0) return 'Lightly fresh. Your fitness is working for you right now.'
-  if (tsb >= -10) return 'Neutral zone — absorbing training stress normally.'
-  if (tsb >= -20) return 'Some fatigue is building. Normal for a build phase.'
-  if (tsb >= -30) return 'Carrying meaningful fatigue. Protect your sleep and recovery.'
-  return 'Deep fatigue — a rest or recovery day is overdue.'
+  if (tsb >= 10) return 'Fresh and race-ready.'
+  if (tsb >= 0) return 'Lightly fresh.'
+  if (tsb >= -10) return 'Neutral zone.'
+  if (tsb >= -20) return 'Fatigue building.'
+  if (tsb >= -30) return 'Meaningful fatigue — protect recovery.'
+  return 'Deep fatigue — rest needed.'
 }
 
 function atlContext(atl: number, ctl: number): string {
   const ratio = ctl > 0 ? atl / ctl : 1
-  if (ratio > 1.4) return 'Recent load is well above your fitness baseline — reduce if this persists.'
-  if (ratio > 1.15) return 'Recent training load is elevated relative to your fitness — normal in a build block.'
-  if (ratio < 0.7) return 'Very light recent load. Good for recovery or a taper week.'
-  return 'Recent load is proportionate to your base fitness.'
+  if (ratio > 1.4) return 'Load well above baseline — watch it.'
+  if (ratio > 1.15) return 'Elevated load — normal in a build block.'
+  if (ratio < 0.7) return 'Very light load — recovery or taper.'
+  return 'Load proportionate to fitness.'
 }
 
 function ctlContext(ctl: number): string {
-  if (ctl >= 80) return 'High aerobic base — you\'re well prepared for demanding events.'
-  if (ctl >= 55) return 'Solid fitness level for competitive training and events.'
-  if (ctl >= 35) return 'Moderate fitness base. Consistent training will build it steadily.'
-  if (ctl >= 15) return 'Early-season or returning-athlete range. Room to grow.'
-  return 'Fitness base is low — focus on building consistent aerobic volume.'
+  if (ctl >= 80) return 'High aerobic base.'
+  if (ctl >= 55) return 'Solid competitive fitness.'
+  if (ctl >= 35) return 'Moderate base — building steadily.'
+  if (ctl >= 15) return 'Early-season range.'
+  return 'Low base — build aerobic volume.'
 }
 
 function ctlTrend(series: Array<{ ctl: number }> | undefined): 'up' | 'down' | 'flat' {
@@ -135,6 +243,16 @@ function ctlTrend(series: Array<{ ctl: number }> | undefined): 'up' | 'down' | '
   const twoWeeksAgo = series[series.length - 14].ctl
   const delta = recent - twoWeeksAgo
   return delta > 2 ? 'up' : delta < -2 ? 'down' : 'flat'
+}
+
+function recoveryQuality(signals: { sleep_score?: number; hrv_status?: string; body_battery?: number }) {
+  let score = 0
+  let count = 0
+  if (signals.sleep_score != null) { score += signals.sleep_score >= 70 ? 1 : signals.sleep_score < 50 ? -1 : 0; count++ }
+  if (signals.hrv_status) { score += signals.hrv_status.toLowerCase() === 'balanced' ? 1 : signals.hrv_status.toLowerCase() === 'low' ? -1 : 0; count++ }
+  if (signals.body_battery != null) { score += signals.body_battery >= 60 ? 1 : signals.body_battery < 30 ? -1 : 0; count++ }
+  if (count === 0) return 'mixed'
+  return score / count > 0.3 ? 'good' : score / count < -0.3 ? 'low' : 'mixed'
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -169,166 +287,118 @@ export default function Dashboard() {
   }
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-zinc-500 text-sm">Loading…</div>
+    return (
+      <div className="flex items-center justify-center h-40 text-sm text-[#484F58]">
+        Loading…
+      </div>
+    )
   }
 
   const current = fitness?.current ?? { ctl: 0, atl: 0, tsb: 0 }
   const readiness = fitness?.readiness
   const signals = readiness?.signals ?? {}
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
 
   return (
-    <div className="flex flex-col gap-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-white">Dashboard</h1>
-          <p className="text-sm text-zinc-500 mt-0.5">
-            {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </p>
-        </div>
-        {fitness && (
-          <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-full px-3 py-1.5 text-xs">
-            <span className="text-zinc-400">{fitness.season === 'SKI' ? '⛷️' : '🚴'}</span>
-            <span className="text-zinc-300 font-medium">
-              {fitness.season === 'SKI' ? 'Ski season' : 'Road season'}
-            </span>
-          </div>
-        )}
-      </div>
+    <div className="flex flex-col gap-5 p-4 overflow-y-auto">
 
-      {/* Readiness + signals */}
-      {readiness && (
-        <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Today's Readiness</p>
-          <div className="flex gap-6 items-start">
-            <ReadinessRing score={readiness.score} zone={readiness.zone} />
-            <div className="flex-1 flex flex-col gap-3">
-              <p className="text-sm text-zinc-300 leading-relaxed">{readiness.guidance}</p>
-              <div className="grid grid-cols-2 gap-2">
-                {signals.body_battery != null && (
-                  <SignalChip
-                    icon={Battery}
-                    label="Body battery"
-                    value={`${signals.body_battery}%`}
-                    good={signals.body_battery >= 60 ? true : signals.body_battery < 30 ? false : null}
-                  />
-                )}
-                {signals.hrv_status && (
-                  <SignalChip
-                    icon={Heart}
-                    label="HRV status"
-                    value={signals.hrv_status}
-                    good={signals.hrv_status.toLowerCase() === 'balanced' ? true : signals.hrv_status.toLowerCase() === 'low' ? false : null}
-                  />
-                )}
-                {signals.sleep_score != null && (
-                  <SignalChip
-                    icon={Moon}
-                    label="Sleep score"
-                    value={`${signals.sleep_score}`}
-                    sub={signals.sleep_hours ? `${signals.sleep_hours}h` : undefined}
-                    good={signals.sleep_score >= 70 ? true : signals.sleep_score < 50 ? false : null}
-                  />
-                )}
-                {signals.resting_hr != null && (
-                  <SignalChip
-                    icon={Zap}
-                    label="Resting HR"
-                    value={`${Math.round(signals.resting_hr)} bpm`}
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* 1 — Greeting + readiness */}
+      {readiness ? (
+        <ChatTurn text={`${greeting} Alex. Here's your readiness for today.`}>
+          <ReadinessCard score={readiness.score} zone={readiness.zone} guidance={readiness.guidance} />
+        </ChatTurn>
+      ) : (
+        <ChatTurn text={`${greeting} Alex. No readiness data yet — sync your device in Settings.`} />
       )}
 
-      {/* Train Now */}
-      <TrainNow athleteId={athleteId} />
+      {/* 2 — Recovery signals */}
+      {readiness && Object.keys(signals).length > 0 && (
+        <ChatTurn text={`Your recovery signals look ${recoveryQuality(signals)}.`}>
+          <SignalRow signals={signals} />
+        </ChatTurn>
+      )}
 
-      {/* Training load metrics */}
-      <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Training Load</p>
-        <div className="grid grid-cols-3 gap-6 divide-x divide-zinc-800">
-          <LoadMetric
-            label="CTL — Fitness"
-            value={current.ctl}
-            description={ctlContext(current.ctl)}
-            trend={ctlTrend(fitness?.series)}
-          />
-          <div className="pl-6">
-            <LoadMetric
-              label="ATL — Fatigue"
-              value={current.atl}
-              description={atlContext(current.atl, current.ctl)}
-              trend={current.atl > current.ctl * 1.15 ? 'up' : current.atl < current.ctl * 0.8 ? 'down' : 'flat'}
-            />
-          </div>
-          <div className="pl-6">
-            <LoadMetric
-              label="TSB — Form"
-              value={current.tsb}
-              description={tsbContext(current.tsb)}
-              trend={current.tsb >= 0 ? 'up' : 'down'}
-            />
-          </div>
-        </div>
-      </div>
+      {/* 3 — Load */}
+      <ChatTurn
+        text={`Your fitness is at CTL ${Math.round(current.ctl)}. Form is ${tsbContext(current.tsb).toLowerCase()}`}
+      >
+        <LoadCard
+          ctl={current.ctl}
+          atl={current.atl}
+          tsb={current.tsb}
+          ctlDesc={ctlContext(current.ctl)}
+          atlDesc={atlContext(current.atl, current.ctl)}
+          tsbDesc={tsbContext(current.tsb)}
+          ctlTrendDir={ctlTrend(fitness?.series)}
+        />
+      </ChatTurn>
 
-      {/* 90-day chart */}
+      {/* 4 — Fitness chart link */}
       {fitness && fitness.series.length > 0 && (
-        <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-          <h2 className="text-sm font-semibold text-zinc-300 mb-5">90-Day Training Load</h2>
-          <FitnessChart data={fitness.series} />
-        </div>
-      )}
-
-      {/* This week's plan */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-zinc-300">This Week</h2>
+        <ChatTurn text="Tap to see your 90-day training load chart in the detail panel.">
           <a
             href="/plan"
-            className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="inline-flex items-center gap-1 text-xs font-medium text-[#58A6FF] hover:text-blue-300 transition-colors"
           >
-            Full plan <ChevronRight size={12} />
+            View fitness chart <ChevronRight size={12} />
           </a>
-        </div>
+        </ChatTurn>
+      )}
+
+      {/* 5 — Plan */}
+      <ChatTurn
+        text={
+          plan
+            ? `This week you have ${plan.workouts.length} session${plan.workouts.length !== 1 ? 's' : ''} planned.`
+            : "No plan for this week yet. Head to Plan to generate one."
+        }
+      >
         {plan ? (
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {plan.workouts.map((w) => (
-              <WorkoutCard
-                key={w.id}
-                workout={w}
-                isToday={w.day_of_week === todayDow}
-                onMarkComplete={handleMarkComplete}
-              />
-            ))}
+          <div
+            className="rounded-xl border overflow-x-auto"
+            style={{ backgroundColor: '#161B22', borderColor: '#30363D' }}
+          >
+            <div className="flex gap-2 p-2.5">
+              {plan.workouts.map((w) => (
+                <WorkoutCard
+                  key={w.id}
+                  workout={w}
+                  compact
+                  isToday={w.day_of_week === todayDow}
+                  onMarkComplete={handleMarkComplete}
+                />
+              ))}
+            </div>
+            {plan.narrative && (
+              <div className="px-2.5 pb-2.5" style={{ borderTop: '1px solid #30363D', paddingTop: '8px' }}>
+                <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: '#58A6FF' }}>Coach's note</p>
+                <p className="text-[11px] leading-relaxed" style={{ color: '#8B949E' }}>{plan.narrative}</p>
+              </div>
+            )}
           </div>
         ) : (
-          <div className="bg-zinc-900 rounded-2xl p-8 border border-zinc-800 text-center">
-            <p className="text-zinc-500 text-sm mb-3">No plan for this week yet.</p>
-            <a
-              href="/plan"
-              className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300 text-sm font-medium transition-colors"
-            >
-              Generate this week's plan <ChevronRight size={14} />
-            </a>
-          </div>
+          <a
+            href="/plan"
+            className="inline-flex items-center gap-1 text-xs font-medium text-[#58A6FF] hover:text-blue-300 transition-colors"
+          >
+            Generate this week's plan <ChevronRight size={12} />
+          </a>
         )}
-        {plan?.narrative && (
-          <div className="mt-3 bg-zinc-900 rounded-2xl p-4 border border-blue-900/50">
-            <p className="text-xs text-blue-400 font-semibold uppercase tracking-wider mb-1.5">Coach's Note</p>
-            <p className="text-sm text-zinc-300 leading-relaxed">{plan.narrative}</p>
-          </div>
-        )}
-      </div>
+      </ChatTurn>
 
-      {/* Recent activity */}
-      <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-        <h2 className="text-sm font-semibold text-zinc-300 mb-4">Recent Activities</h2>
-        <ActivityFeed activities={activities} />
-      </div>
+      {/* 6 — Recent activities */}
+      {activities.length > 0 && (
+        <ChatTurn text="Here's what you've done recently.">
+          <ActivityFeed activities={activities} compact />
+        </ChatTurn>
+      )}
+
+      {/* 7 — Train Now */}
+      <ChatTurn text="Ready to train now? Tell me what you want to do.">
+        <TrainNow athleteId={athleteId} />
+      </ChatTurn>
+
     </div>
   )
 }

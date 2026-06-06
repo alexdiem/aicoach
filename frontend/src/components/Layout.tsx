@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { type ReactNode, useState } from 'react'
-import { LayoutDashboard, CalendarDays, Map, Settings, Bot } from 'lucide-react'
+import { LayoutDashboard, CalendarDays, Map, Settings } from 'lucide-react'
 import clsx from 'clsx'
 import { getModelPref, setModelPref, type ModelPref } from '../api/client'
 
@@ -20,12 +20,49 @@ export default function Layout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen flex bg-zinc-950">
-      <nav className="w-52 shrink-0 bg-zinc-900 border-r border-zinc-800 flex flex-col p-3">
-        <div className="px-3 py-4 mb-2">
-          <span className="text-lg font-bold tracking-tight text-white">ai<span className="text-blue-400">coach</span></span>
+    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: '#0D1117' }}>
+      {/* Left panel — 320px fixed, contains page content + bottom nav */}
+      <div
+        className="w-80 shrink-0 flex flex-col h-full border-r"
+        style={{ borderColor: '#30363D', backgroundColor: '#0D1117' }}
+      >
+        {/* Logo bar */}
+        <div className="px-4 py-3 shrink-0 flex items-center justify-between border-b" style={{ borderColor: '#30363D' }}>
+          <span className="text-base font-bold tracking-tight" style={{ color: '#E6EDF3' }}>
+            ai<span style={{ color: '#58A6FF' }}>coach</span>
+          </span>
+          {/* Model toggle — compact pill */}
+          <div
+            className="flex rounded-md overflow-hidden border text-[10px] font-medium"
+            style={{ borderColor: '#30363D' }}
+          >
+            {(['haiku', 'sonnet'] as ModelPref[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => toggleModel(m)}
+                className="px-2 py-1 capitalize transition-colors"
+                style={
+                  model === m
+                    ? { backgroundColor: '#30363D', color: '#E6EDF3' }
+                    : { backgroundColor: 'transparent', color: '#484F58' }
+                }
+              >
+                {m}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex flex-col gap-0.5">
+
+        {/* Scrollable page content area */}
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {children}
+        </div>
+
+        {/* Bottom tab bar */}
+        <div
+          className="shrink-0 flex border-t"
+          style={{ borderColor: '#30363D', backgroundColor: '#0D1117' }}
+        >
           {nav.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
@@ -33,48 +70,28 @@ export default function Layout({ children }: { children: ReactNode }) {
               end={to === '/'}
               className={({ isActive }) =>
                 clsx(
-                  'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all',
+                  'flex-1 flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium transition-colors',
                   isActive
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800',
+                    ? 'text-[#58A6FF]'
+                    : 'text-[#484F58] hover:text-[#8B949E]',
                 )
               }
             >
-              <Icon size={16} strokeWidth={1.75} />
-              {label}
+              {({ isActive }) => (
+                <>
+                  <Icon size={18} strokeWidth={isActive ? 2 : 1.5} />
+                  {label}
+                </>
+              )}
             </NavLink>
           ))}
         </div>
+      </div>
 
-        {/* Model selector */}
-        <div className="mt-auto pt-4 border-t border-zinc-800">
-          <div className="px-1 mb-1.5 flex items-center gap-1.5 text-[10px] text-zinc-600 uppercase tracking-wider">
-            <Bot size={10} /> AI Model
-          </div>
-          <div className="flex rounded-lg overflow-hidden border border-zinc-700 text-xs font-medium">
-            {(['haiku', 'sonnet'] as ModelPref[]).map((m) => (
-              <button
-                key={m}
-                onClick={() => toggleModel(m)}
-                className={clsx(
-                  'flex-1 py-1.5 transition-colors capitalize',
-                  model === m
-                    ? 'bg-zinc-700 text-white'
-                    : 'text-zinc-500 hover:text-zinc-300',
-                )}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-          <p className="mt-1.5 px-1 text-[10px] text-zinc-600 leading-snug">
-            {model === 'haiku' ? 'Fast · lower cost' : 'Smarter · higher cost'}
-          </p>
-        </div>
-      </nav>
-      <main className="flex-1 overflow-auto">
-        <div className="max-w-6xl mx-auto px-6 py-8">{children}</div>
-      </main>
+      {/* Right panel — detail view */}
+      <div className="flex-1 flex items-center justify-center select-none text-sm" style={{ color: '#30363D' }}>
+        Select an item to view details
+      </div>
     </div>
   )
 }

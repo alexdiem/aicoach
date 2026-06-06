@@ -25,26 +25,66 @@ const fallbackStyle = { dot: 'bg-zinc-600', badge: 'bg-zinc-800 text-zinc-400 bo
 interface Props {
   workout: PlannedWorkout
   isToday?: boolean
+  /** When true, renders as a compact horizontal chip for the chat feed */
+  compact?: boolean
   onMarkComplete?: (workout: PlannedWorkout) => void
 }
 
-export default function WorkoutCard({ workout, isToday, onMarkComplete }: Props) {
+export default function WorkoutCard({ workout, isToday, compact, onMarkComplete }: Props) {
   const icon = SPORT_ICONS[workout.sport] ?? '🏋️'
   const style = TYPE_STYLES[workout.workout_type] ?? fallbackStyle
   const dayLabel = DAY_LABELS[workout.day_of_week] ?? ''
+
+  if (compact) {
+    return (
+      <div
+        className={clsx(
+          'inline-flex items-center gap-2 rounded-xl px-3 py-2 border shrink-0 transition-all',
+          isToday
+            ? 'border-[#58A6FF]/40'
+            : 'border-[#30363D]',
+          workout.is_completed && 'opacity-50',
+        )}
+        style={{ backgroundColor: '#161B22' }}
+      >
+        <span className="text-base leading-none">{icon}</span>
+        <div className="flex flex-col gap-0.5">
+          <span className={clsx('text-[10px] font-semibold uppercase tracking-wider', isToday ? 'text-[#58A6FF]' : 'text-[#8B949E]')}>
+            {isToday ? 'Today' : dayLabel}
+          </span>
+          <div className="flex items-center gap-1.5">
+            <span className={clsx('text-[10px] px-1.5 py-0.5 rounded-full border font-medium', style.badge)}>
+              {workout.workout_type}
+            </span>
+            <span className="text-[10px] text-[#8B949E]">{workout.duration_minutes}m</span>
+          </div>
+        </div>
+        {workout.is_completed && <span className="text-emerald-400 text-[10px] font-semibold ml-1">✓</span>}
+        {!workout.is_completed && onMarkComplete && (
+          <button
+            onClick={() => onMarkComplete(workout)}
+            className="text-[10px] text-[#58A6FF] hover:text-blue-300 transition-colors font-medium ml-1"
+          >
+            Done
+          </button>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div
       className={clsx(
         'rounded-2xl p-4 border flex flex-col gap-3 min-w-[156px] max-w-[180px] transition-all',
         isToday
-          ? 'bg-zinc-900 border-blue-500/60 shadow-[0_0_0_1px_rgba(59,130,246,0.15)]'
-          : 'bg-zinc-900 border-zinc-800',
+          ? 'border-[#58A6FF]/60 shadow-[0_0_0_1px_rgba(88,166,255,0.1)]'
+          : 'border-[#30363D]',
         workout.is_completed && 'opacity-50',
       )}
+      style={{ backgroundColor: '#161B22' }}
     >
       <div className="flex items-center justify-between">
-        <span className={clsx('text-xs font-semibold uppercase tracking-wider', isToday ? 'text-blue-400' : 'text-zinc-500')}>
+        <span className={clsx('text-xs font-semibold uppercase tracking-wider', isToday ? 'text-[#58A6FF]' : 'text-[#8B949E]')}>
           {isToday ? 'Today' : dayLabel}
         </span>
         {workout.is_completed && (
@@ -62,14 +102,14 @@ export default function WorkoutCard({ workout, isToday, onMarkComplete }: Props)
       </div>
 
       <div>
-        <p className="text-sm font-bold text-white">
+        <p className="text-sm font-bold" style={{ color: '#E6EDF3' }}>
           {workout.duration_minutes}
-          <span className="text-zinc-400 font-normal text-xs ml-1">min</span>
+          <span className="text-[#8B949E] font-normal text-xs ml-1">min</span>
           {workout.intensity_zone && (
-            <span className="text-zinc-500 font-normal text-xs ml-1.5">{workout.intensity_zone}</span>
+            <span className="text-[#8B949E] font-normal text-xs ml-1.5">{workout.intensity_zone}</span>
           )}
         </p>
-        <p className="text-xs text-zinc-500 mt-1 line-clamp-2 leading-relaxed">{workout.purpose}</p>
+        <p className="text-xs text-[#8B949E] mt-1 line-clamp-2 leading-relaxed">{workout.purpose}</p>
       </div>
 
       {workout.terrain_notes && (
@@ -91,14 +131,14 @@ export default function WorkoutCard({ workout, isToday, onMarkComplete }: Props)
           >
             {workout.compliance_score}%
           </span>
-          <span className="text-zinc-600 text-xs">compliance</span>
+          <span className="text-[#484F58] text-xs">compliance</span>
         </div>
       )}
 
       {!workout.is_completed && onMarkComplete && (
         <button
           onClick={() => onMarkComplete(workout)}
-          className="text-xs text-blue-400 hover:text-blue-300 transition-colors font-medium text-left"
+          className="text-xs text-[#58A6FF] hover:text-blue-300 transition-colors font-medium text-left"
         >
           Mark complete →
         </button>
