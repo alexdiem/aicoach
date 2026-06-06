@@ -1,24 +1,42 @@
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.activity import Activity
-from app.models.athlete import Athlete, GarminToken
+from app.models.athlete import Athlete
 from app.models.plan import PlannedWorkout, WeeklyPlan
 from app.models.route import Route
 from app.services import ai_coach
-from app.services.fitness import (
-    calculate_ctl_atl_tsb,
-    calculate_daily_loads,
-    cross_sport_aerobic_transfer,
-)
-from app.services.plan_generator import generate_weekly_plan_data
+from app.services.fitness import calculate_ctl_atl_tsb, calculate_daily_loads
+from app.services.plan_generator import generate_weekly_plan_data, VALID_SPORTS
 from app.services.season_detector import detect_season
 
 router = APIRouter(prefix="/plan", tags=["plan"])
+
+
+class DayPreference(BaseModel):
+    day_of_week: int = Field(..., ge=0, le=6, description="0=Monday, 6=Sunday")
+    is_rest: bool = False
+    preferred_sport: str | None = Field(
+        None,
+        description="CYCLING, RUNNING, XC_SKIING, or STRENGTH. None means no preference.",
+    )
+
+    def model_post_init(self, __context) -> None:
+        if self.preferred_sport and self.preferred_sport not in VALID_SPORTS:
+            raise ValueError(f"preferred_sport must be one of {VALID_SPORTS}")
+
+
+class GeneratePlanRequest(BaseModel):
+    athlete_schedule: list[DayPreference] = Field(
+        default_factory=list,
+        description="Per-day constraints. Omit days you have no preference for.",
+    )
+    fun_activities: list[dict] = Field(default_factory=list)
 
 
 async def _get_athlete_or_404(athlete_id: int, db: AsyncSession) -> Athlete:
@@ -32,12 +50,11 @@ async def _get_athlete_or_404(athlete_id: int, db: AsyncSession) -> Athlete:
 @router.post("/generate")
 async def generate_plan(
     athlete_id: int,
-    fun_activities: list[dict] | None = None,
+    body: GeneratePlanRequest = GeneratePlanRequest(),
     db: AsyncSession = Depends(get_db),
 ):
     athlete = await _get_athlete_or_404(athlete_id, db)
 
-    # Load recent activities (90 days)
     cutoff = date.today() - timedelta(days=90)
     acts_result = await db.execute(
         select(Activity)
@@ -46,20 +63,19 @@ async def generate_plan(
     )
     activities = list(acts_result.scalars().all())
 
-    # Compute fitness metrics
     daily_loads = calculate_daily_loads(activities, athlete)
     fitness_series = calculate_ctl_atl_tsb(daily_loads)
     latest = fitness_series[-1] if fitness_series else {"ctl": 0, "atl": 0, "tsb": 0}
     ctl, atl, tsb = latest["ctl"], latest["atl"], latest["tsb"]
 
-    # Detect season
     season, confidence = detect_season(activities)
 
-    # Load routes
     routes_result = await db.execute(select(Route).where(Route.athlete_id == athlete_id))
     routes = list(routes_result.scalars().all())
 
-    # Generate plan structure
+    # Serialise schedule constraints for the generator
+    schedule = [s.model_dump() for s in body.athlete_schedule]
+
     plan_data = generate_weekly_plan_data(
         athlete=athlete,
         ctl=ctl,
@@ -67,18 +83,17 @@ async def generate_plan(
         tsb=tsb,
         season=season,
         recent_activities=activities,
-        fun_activities_next_week=fun_activities or [],
+        fun_activities_next_week=body.fun_activities,
         available_routes=routes,
+        athlete_schedule=schedule,
     )
 
-    # AI narrative (called once per plan generation)
     narrative = await ai_coach.generate_plan_narrative(
         athlete=athlete,
         plan_data=plan_data,
         fitness_context={"ctl": ctl, "atl": atl, "tsb": tsb},
     )
 
-    # Persist plan
     plan = WeeklyPlan(
         athlete_id=athlete_id,
         week_start=plan_data["week_start"],
@@ -116,7 +131,7 @@ async def get_current_plan(athlete_id: int, db: AsyncSession = Depends(get_db)):
         .where(WeeklyPlan.athlete_id == athlete_id, WeeklyPlan.week_start == monday)
         .order_by(desc(WeeklyPlan.created_at))
     )
-    plan = result.scalar_one_or_none()
+    plan = result.scalars().first()
     if not plan:
         return None
     return await _serialize_plan(plan, db)
@@ -135,7 +150,11 @@ async def get_plan_history(
         .limit(limit)
     )
     plans = result.scalars().all()
-    return [{"id": p.id, "week_start": p.week_start.isoformat(), "season": p.season, "phase": p.phase, "ctl": p.ctl_at_generation} for p in plans]
+    return [
+        {"id": p.id, "week_start": p.week_start.isoformat(), "season": p.season,
+         "phase": p.phase, "ctl": p.ctl_at_generation}
+        for p in plans
+    ]
 
 
 @router.put("/workouts/{workout_id}/complete")

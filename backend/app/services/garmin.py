@@ -1,213 +1,205 @@
 """
-Garmin Health API client using OAuth 1.0a (consumer key + user token).
+Garmin Connect data fetching via python-garminconnect (unofficial library).
+Uses the same SSO auth flow as the Garmin Connect mobile app.
+No developer account or API approval needed — just your Garmin Connect credentials.
 
-The Garmin Health API uses OAuth 1.0a — not OAuth 2.0. The developer registers
-an app and gets a consumer key/secret. Users authorize via a three-legged OAuth
-1.0a flow. This client handles the full flow.
-
-Garmin Health API docs: https://developer.garmin.com/health-api/overview/
+Library: https://github.com/cyberjunky/python-garminconnect
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
-import random
-import string
-import time
-import urllib.parse
-from datetime import date, datetime, timedelta, timezone
-from typing import Any
+import asyncio
+import logging
+from datetime import date, datetime, timedelta
+from functools import lru_cache
 
-import httpx
-from authlib.integrations.httpx_client import AsyncOAuth1Client
+from garminconnect import Garmin, GarminConnectAuthenticationError
 
 from app.config import settings
 
-GARMIN_REQUEST_TOKEN_URL = "https://connectapi.garmin.com/oauth-service/oauth/request_token"
-GARMIN_AUTHORIZE_URL = "https://connect.garmin.com/oauthConfirm"
-GARMIN_ACCESS_TOKEN_URL = "https://connectapi.garmin.com/oauth-service/oauth/access_token"
-GARMIN_API_BASE = "https://healthapi.garmin.com/wellness-api/rest"
+logger = logging.getLogger(__name__)
+
+# Token cache path — the library persists OAuth tokens here to avoid re-login
+TOKENSTORE = "/tmp/garmin_tokens"
 
 
-def _make_oauth1_client(
-    access_token: str | None = None,
-    access_token_secret: str | None = None,
-) -> AsyncOAuth1Client:
-    return AsyncOAuth1Client(
-        client_id=settings.GARMIN_CLIENT_ID,
-        client_secret=settings.GARMIN_CLIENT_SECRET,
-        token=access_token,
-        token_secret=access_token_secret,
+def _make_client() -> Garmin:
+    """Create and authenticate a Garmin client, reusing cached tokens when possible."""
+    client = Garmin(
+        email=settings.GARMIN_EMAIL,
+        password=settings.GARMIN_PASSWORD,
+        is_cn=False,
+        return_on_mfa=False,
     )
+    try:
+        client.login(TOKENSTORE)
+    except (FileNotFoundError, GarminConnectAuthenticationError):
+        client.login()
+        client.garth.dump(TOKENSTORE)
+    return client
 
 
-async def get_request_token() -> dict:
-    """Step 1: Get a temporary request token."""
-    async with _make_oauth1_client() as client:
-        resp = await client.fetch_request_token(
-            GARMIN_REQUEST_TOKEN_URL,
-            params={"oauth_callback": settings.GARMIN_REDIRECT_URI},
-        )
-        return resp
-
-
-def get_authorization_url(oauth_token: str) -> str:
-    """Step 2: Build the URL to redirect the user to for authorization."""
-    return f"{GARMIN_AUTHORIZE_URL}?oauth_token={urllib.parse.quote(oauth_token)}"
-
-
-async def exchange_for_access_token(
-    oauth_token: str,
-    oauth_token_secret: str,
-    oauth_verifier: str,
-) -> dict:
-    """Step 3: Exchange verifier for access token."""
-    async with _make_oauth1_client(oauth_token, oauth_token_secret) as client:
-        resp = await client.fetch_access_token(
-            GARMIN_ACCESS_TOKEN_URL,
-            verifier=oauth_verifier,
-        )
-        return resp  # {"oauth_token": ..., "oauth_token_secret": ...}
+def _run_sync(fn, *args, **kwargs):
+    """Run a blocking garminconnect call in a thread pool to keep FastAPI async."""
+    return asyncio.get_event_loop().run_in_executor(None, lambda: fn(*args, **kwargs))
 
 
 class GarminClient:
-    """Authenticated Garmin Health API client for a specific user."""
+    """Async wrapper around the synchronous python-garminconnect library."""
 
-    def __init__(self, access_token: str, access_token_secret: str):
-        self.access_token = access_token
-        self.access_token_secret = access_token_secret
+    def __init__(self):
+        self._client: Garmin | None = None
 
-    def _client(self) -> AsyncOAuth1Client:
-        return _make_oauth1_client(self.access_token, self.access_token_secret)
+    def _get(self) -> Garmin:
+        if self._client is None:
+            self._client = _make_client()
+        return self._client
 
-    async def get_activities(
-        self,
-        start_date: date,
-        end_date: date,
-    ) -> list[dict]:
-        """Fetch activity summaries for a date range."""
-        start_ts = int(datetime(start_date.year, start_date.month, start_date.day, tzinfo=timezone.utc).timestamp())
-        end_ts = int(datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, tzinfo=timezone.utc).timestamp())
+    async def get_activities(self, start_date: date, end_date: date) -> list[dict]:
+        """Fetch all activities in a date range."""
+        client = self._get()
+        days = (end_date - start_date).days + 1
 
-        url = f"{GARMIN_API_BASE}/activities"
-        params = {"uploadStartTimeInSeconds": start_ts, "uploadEndTimeInSeconds": end_ts}
+        def _fetch():
+            # The library fetches by start offset + limit; we use a large limit
+            return client.get_activities_by_date(
+                start_date.isoformat(), end_date.isoformat()
+            )
 
-        async with self._client() as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            return resp.json()
+        result = await _run_sync(_fetch)
+        return result or []
 
-    async def get_daily_summaries(
-        self,
-        start_date: date,
-        end_date: date,
-    ) -> list[dict]:
-        """Fetch daily wellness summaries (steps, sleep, stress, HRV)."""
-        url = f"{GARMIN_API_BASE}/dailies"
-        params = {
-            "startDate": start_date.isoformat(),
-            "endDate": end_date.isoformat(),
-        }
-        async with self._client() as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            return resp.json()
+    async def get_activity_details(self, activity_id: int) -> dict:
+        client = self._get()
+        return await _run_sync(client.get_activity_details, activity_id)
 
-    async def get_sleep_data(self, start_date: date, end_date: date) -> list[dict]:
-        url = f"{GARMIN_API_BASE}/sleep"
-        params = {"startDate": start_date.isoformat(), "endDate": end_date.isoformat()}
-        async with self._client() as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            return resp.json()
+    async def get_hrv_data(self, target_date: date) -> dict | None:
+        client = self._get()
+        try:
+            return await _run_sync(client.get_hrv_data, target_date.isoformat())
+        except Exception:
+            return None
 
-    async def get_hrv_data(self, start_date: date, end_date: date) -> list[dict]:
-        url = f"{GARMIN_API_BASE}/hrv"
-        params = {"startDate": start_date.isoformat(), "endDate": end_date.isoformat()}
-        async with self._client() as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            return resp.json()
+    async def get_sleep_data(self, target_date: date) -> dict | None:
+        client = self._get()
+        try:
+            return await _run_sync(client.get_sleep_data, target_date.isoformat())
+        except Exception:
+            return None
 
-    async def get_user_metrics(self) -> dict:
-        """Fetch user metrics including VO2max."""
-        url = f"{GARMIN_API_BASE}/userMetrics"
-        async with self._client() as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            return resp.json()
+    async def get_user_profile(self) -> dict:
+        client = self._get()
+        return await _run_sync(client.get_user_profile)
+
+    async def get_stats(self, target_date: date) -> dict | None:
+        """Daily wellness stats — steps, calories, stress, etc."""
+        client = self._get()
+        try:
+            return await _run_sync(client.get_stats, target_date.isoformat())
+        except Exception:
+            return None
+
+    async def get_max_metrics(self) -> dict | None:
+        """VO2max and fitness age from Garmin."""
+        client = self._get()
+        try:
+            return await _run_sync(client.get_max_metrics, date.today().isoformat())
+        except Exception:
+            return None
+
+
+# Module-level singleton — one client per server process
+_garmin_client: GarminClient | None = None
+
+
+def get_garmin_client() -> GarminClient:
+    global _garmin_client
+    if _garmin_client is None:
+        _garmin_client = GarminClient()
+    return _garmin_client
+
+
+# ─── Activity normalization ────────────────────────────────────────────────────
+
+ACTIVITY_TYPE_MAP = {
+    "cycling": "CYCLING",
+    "indoor_cycling": "CYCLING",
+    "mountain_biking": "CYCLING",
+    "road_biking": "CYCLING",
+    "gravel_cycling": "CYCLING",
+    "running": "RUNNING",
+    "trail_running": "RUNNING",
+    "treadmill_running": "RUNNING",
+    "cross_country_skiing": "XC_SKIING",
+    "skate_skiing": "XC_SKIING",
+    "xc_classic_skiing": "XC_SKIING",
+    "backcountry_skiing": "XC_SKIING",
+    "hiking": "HIKING",
+    "rock_climbing": "CLIMBING",
+    "strength_training": "STRENGTH",
+    "fitness_equipment": "STRENGTH",
+    "yoga": "OTHER",
+    "swimming": "OTHER",
+    "open_water_swimming": "OTHER",
+}
+
+_CASUAL = {"HIKING", "CLIMBING"}
+_STRENGTH = {"STRENGTH"}
+_AEROBIC = {"CYCLING", "RUNNING", "XC_SKIING"}
 
 
 def parse_garmin_activity(raw: dict) -> dict:
-    """
-    Normalize a raw Garmin activity summary into our internal format.
-    Maps Garmin activity types to our internal types.
-    """
-    garmin_type_map = {
-        "CYCLING": "CYCLING",
-        "INDOOR_CYCLING": "CYCLING",
-        "MOUNTAIN_BIKING": "CYCLING",
-        "ROAD_BIKING": "CYCLING",
-        "RUNNING": "RUNNING",
-        "TRAIL_RUNNING": "RUNNING",
-        "TREADMILL_RUNNING": "RUNNING",
-        "CROSS_COUNTRY_SKIING": "XC_SKIING",
-        "XC_CLASSIC_SKIING": "XC_SKIING",
-        "SKATE_SKIING": "XC_SKIING",
-        "HIKING": "HIKING",
-        "ROCK_CLIMBING": "CLIMBING",
-        "STRENGTH_TRAINING": "STRENGTH",
-        "FITNESS_EQUIPMENT": "STRENGTH",
-    }
-    casual_types = {"HIKING", "CLIMBING"}
-    strength_types = {"STRENGTH"}
-    aerobic_types = {"CYCLING", "RUNNING", "XC_SKIING"}
+    """Normalize a raw python-garminconnect activity dict to our internal format."""
+    type_key = (
+        raw.get("activityType", {}).get("typeKey", "")
+        or raw.get("activityType", "")
+    ).lower().replace(" ", "_")
 
-    activity_type_raw = raw.get("activityType", {})
-    if isinstance(activity_type_raw, dict):
-        garmin_type = activity_type_raw.get("typeKey", "OTHER").upper()
-    else:
-        garmin_type = str(activity_type_raw).upper()
+    internal_type = ACTIVITY_TYPE_MAP.get(type_key, "OTHER")
 
-    internal_type = garmin_type_map.get(garmin_type, "OTHER")
-
-    if internal_type in aerobic_types:
+    if internal_type in _AEROBIC:
         sport_category = "AEROBIC_TRAINING"
-    elif internal_type in casual_types:
+    elif internal_type in _CASUAL:
         sport_category = "CASUAL"
-    elif internal_type in strength_types:
+    elif internal_type in _STRENGTH:
         sport_category = "STRENGTH"
     else:
         sport_category = "AEROBIC_TRAINING"
 
-    start_time_raw = raw.get("startTimeLocal") or raw.get("startTimeGMT", "")
+    # Start time — the library returns ISO strings
+    start_raw = raw.get("startTimeLocal") or raw.get("startTimeGMT", "")
     try:
-        start_time = datetime.fromisoformat(start_time_raw.replace("Z", "+00:00"))
+        start_time = datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
     except Exception:
         start_time = datetime.utcnow()
+
+    # Distance: library returns meters
+    distance = raw.get("distance") or raw.get("distanceInMeters")
+
+    # Power: cycling
+    avg_power = raw.get("averagePower") or raw.get("avgPower")
+    norm_power = raw.get("normPower") or raw.get("normalizedPower")
+
+    # Pace: running/skiing (library gives m/s as averageSpeed)
+    speed = raw.get("averageSpeed")
+    pace_s_per_km = (1000 / speed) if speed and speed > 0 else None
+
+    is_indoor = type_key in ("indoor_cycling", "treadmill_running", "fitness_equipment")
 
     return {
         "garmin_activity_id": str(raw.get("activityId", "")),
         "activity_type": internal_type,
         "sport_category": sport_category,
         "start_time": start_time,
-        "duration_seconds": raw.get("duration", 0),
-        "distance_meters": raw.get("distance"),
+        "duration_seconds": raw.get("duration") or raw.get("elapsedDuration") or 0,
+        "distance_meters": float(distance) if distance else None,
         "elevation_gain_meters": raw.get("elevationGain"),
-        "avg_heart_rate": raw.get("averageHR"),
-        "max_heart_rate": raw.get("maxHR"),
-        "avg_power_watts": raw.get("avgPower"),
-        "normalized_power_watts": raw.get("normPower"),
-        "avg_pace_seconds_per_km": _pace(raw.get("averageSpeed")),
+        "avg_heart_rate": raw.get("averageHR") or raw.get("avgHr"),
+        "max_heart_rate": raw.get("maxHR") or raw.get("maxHr"),
+        "avg_power_watts": float(avg_power) if avg_power else None,
+        "normalized_power_watts": float(norm_power) if norm_power else None,
+        "avg_pace_seconds_per_km": pace_s_per_km,
         "training_stress_score": raw.get("trainingStressScore"),
         "intensity_factor": raw.get("intensityFactor"),
-        "is_indoor": garmin_type in ("INDOOR_CYCLING", "TREADMILL_RUNNING"),
+        "is_indoor": is_indoor,
         "garmin_raw": raw,
     }
-
-
-def _pace(speed_ms: float | None) -> float | None:
-    """Convert m/s to seconds/km."""
-    if not speed_ms or speed_ms <= 0:
-        return None
-    return 1000 / speed_ms

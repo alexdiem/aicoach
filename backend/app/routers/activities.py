@@ -7,8 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.activity import Activity
-from app.models.athlete import Athlete, GarminToken
-from app.services.garmin import GarminClient, parse_garmin_activity
+from app.services.garmin import get_garmin_client, parse_garmin_activity
 
 router = APIRouter(prefix="/activities", tags=["activities"])
 
@@ -19,20 +18,15 @@ async def sync_activities(
     days_back: int = Query(default=30, le=365),
     db: AsyncSession = Depends(get_db),
 ):
-    """Pull recent activities from Garmin and store in DB."""
-    token_result = await db.execute(select(GarminToken).where(GarminToken.athlete_id == athlete_id))
-    token = token_result.scalar_one_or_none()
-    if not token:
-        raise HTTPException(status_code=401, detail="Garmin account not connected.")
-
-    garmin = GarminClient(token.access_token, token.access_token_secret)
+    """Pull recent activities from Garmin Connect and store in DB."""
+    garmin = get_garmin_client()
     end = date.today()
     start = end - timedelta(days=days_back)
 
     try:
         raw_activities = await garmin.get_activities(start, end)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Garmin API error: {e}")
+        raise HTTPException(status_code=502, detail=f"Garmin fetch failed: {e}")
 
     new_count = 0
     for raw in raw_activities:

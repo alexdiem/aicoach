@@ -34,14 +34,14 @@ export default function Settings() {
     setSaving(false)
   }
 
-  async function handleSync() {
+  async function handleSync(days: number) {
     setSyncing(true)
     setSyncResult(null)
     try {
-      const r = await syncActivities(athleteId, 60)
+      const r = await syncActivities(athleteId, days)
       setSyncResult(`Synced ${r.synced} new activities.`)
     } catch {
-      setSyncResult('Sync failed. Check Garmin connection.')
+      setSyncResult('Sync failed. Check that GARMIN_EMAIL and GARMIN_PASSWORD are correct in backend/.env')
     } finally {
       setSyncing(false)
     }
@@ -53,25 +53,31 @@ export default function Settings() {
 
       {/* Garmin connection */}
       <section className="bg-gray-900 rounded-xl p-6 border border-gray-800">
-        <h2 className="text-base font-semibold text-white mb-4">Garmin Connection</h2>
+        <h2 className="text-base font-semibold text-white mb-1">Garmin Connection</h2>
+        <p className="text-xs text-gray-500 mb-4">
+          Uses your Garmin Connect credentials from <code className="text-gray-400 bg-gray-800 px-1 rounded">backend/.env</code>. No developer account needed.
+        </p>
         <div className="flex items-center gap-3 mb-4">
           <span className="text-green-400 text-lg">●</span>
-          <span className="text-gray-300 text-sm">Connected (athlete ID: {athleteId})</span>
+          <span className="text-gray-300 text-sm">
+            Connected as <span className="text-white font-medium">{athlete?.display_name ?? '…'}</span>
+          </span>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
           <button
-            onClick={handleSync}
+            onClick={() => handleSync(30)}
             disabled={syncing}
             className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
           >
-            {syncing ? 'Syncing…' : 'Sync last 60 days'}
+            {syncing ? 'Syncing…' : 'Sync last 30 days'}
           </button>
-          <a
-            href="/api/auth/login"
-            className="text-blue-400 hover:text-blue-300 text-sm px-4 py-2 border border-gray-700 rounded-lg"
+          <button
+            onClick={() => handleSync(180)}
+            disabled={syncing}
+            className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
           >
-            Reconnect
-          </a>
+            {syncing ? 'Syncing…' : 'Sync last 6 months'}
+          </button>
         </div>
         {syncResult && <p className="text-sm text-gray-400 mt-3">{syncResult}</p>}
       </section>
@@ -90,8 +96,9 @@ export default function Settings() {
           </div>
           <div>
             <label className="text-xs text-gray-500 font-medium uppercase mb-1.5 block">
-              FTP (watts) — used for TSS and interval targeting
+              FTP (watts)
             </label>
+            <p className="text-xs text-gray-600 mb-1.5">Used for cycling TSS and interval targeting. Do a 20min all-out test and multiply by 0.95.</p>
             <input
               value={ftp}
               onChange={(e) => setFtp(e.target.value)}
@@ -102,8 +109,9 @@ export default function Settings() {
           </div>
           <div>
             <label className="text-xs text-gray-500 font-medium uppercase mb-1.5 block">
-              LTHR (bpm) — lactate threshold heart rate for HR-based TSS
+              LTHR (bpm)
             </label>
+            <p className="text-xs text-gray-600 mb-1.5">Lactate threshold heart rate — used for HR-based TSS on runs and ski sessions. 30-min test average HR is a good estimate.</p>
             <input
               value={lthr}
               onChange={(e) => setLthr(e.target.value)}
@@ -122,41 +130,46 @@ export default function Settings() {
         </div>
       </section>
 
-      {/* Garmin API setup guide */}
+      {/* Setup guide */}
       <section className="bg-gray-900 rounded-xl p-6 border border-gray-800">
-        <h2 className="text-base font-semibold text-white mb-4">Getting Garmin API Credentials</h2>
-        <ol className="flex flex-col gap-3 text-sm text-gray-400">
+        <h2 className="text-base font-semibold text-white mb-4">Setup Guide</h2>
+        <ol className="flex flex-col gap-4 text-sm text-gray-400">
           <li>
-            <span className="text-white font-medium">1. Apply for Garmin Health API access</span>
-            <br />
-            Visit <span className="text-blue-400">developer.garmin.com/health-api</span> and create a developer account.
-            Request a Consumer Key and Consumer Secret (OAuth 1.0a).
-          </li>
-          <li>
-            <span className="text-white font-medium">2. Create a .env file</span>
+            <span className="text-white font-medium">1. Configure credentials</span>
             <br />
             Copy <code className="text-gray-300 bg-gray-800 px-1 rounded">backend/.env.example</code> to{' '}
-            <code className="text-gray-300 bg-gray-800 px-1 rounded">backend/.env</code> and fill in your credentials.
+            <code className="text-gray-300 bg-gray-800 px-1 rounded">backend/.env</code>. Set your Garmin Connect
+            email and password. This is the same login you use on the Garmin Connect app or website.
           </li>
           <li>
-            <span className="text-white font-medium">3. Set your OAuth callback URL</span>
+            <span className="text-white font-medium">2. Start the backend</span>
+            <pre className="text-gray-300 bg-gray-800 px-3 py-2 rounded mt-1 text-xs">
+              cd backend{'\n'}
+              pip install -r requirements.txt{'\n'}
+              uvicorn app.main:app --reload
+            </pre>
+          </li>
+          <li>
+            <span className="text-white font-medium">3. Sync your history</span>
             <br />
-            In the Garmin developer console, add{' '}
-            <code className="text-gray-300 bg-gray-800 px-1 rounded">http://localhost:8000/auth/callback</code> as an
-            authorized callback URL.
+            Use the sync buttons above. First sync: do 6 months to build a proper CTL curve.
           </li>
           <li>
-            <span className="text-white font-medium">4. Register your webhook URL (optional)</span>
+            <span className="text-white font-medium">4. Set FTP and LTHR</span>
             <br />
-            For real-time activity push, register{' '}
-            <code className="text-gray-300 bg-gray-800 px-1 rounded">https://your-domain/garmin/webhook</code>{' '}
-            in the Garmin developer console. For local use, manually sync via the button above.
+            These are critical for accurate TSS and interval targeting. Update them whenever your fitness changes significantly.
           </li>
           <li>
-            <span className="text-white font-medium">5. Add your Anthropic API key (optional)</span>
+            <span className="text-white font-medium">5. Upload GPX routes</span>
+            <br />
+            Go to the Routes page and upload your regular cycling routes. The app will analyze climb segments and
+            match them to your planned intervals.
+          </li>
+          <li>
+            <span className="text-white font-medium">6. (Optional) Add Anthropic API key</span>
             <br />
             Set <code className="text-gray-300 bg-gray-800 px-1 rounded">ANTHROPIC_API_KEY</code> in your .env for
-            AI coaching narratives and compliance scoring. Without it, the app works fully with rule-based logic.
+            AI coaching narratives and outdoor compliance scoring. The app works fully without it.
           </li>
         </ol>
       </section>

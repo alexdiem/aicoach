@@ -24,10 +24,11 @@ VOLUME_BY_CTL = [
     (80, 999, 13.0),
 ]
 
-# Polarized distribution targets
-EASY_FRACTION = 0.80  # Z1-Z2
-MODERATE_FRACTION = 0.05  # Z3
-HARD_FRACTION = 0.15  # Z4-Z5
+EASY_FRACTION = 0.80
+MODERATE_FRACTION = 0.05
+HARD_FRACTION = 0.15
+
+VALID_SPORTS = {"CYCLING", "RUNNING", "XC_SKIING", "STRENGTH"}
 
 
 def _target_hours(ctl: float) -> float:
@@ -38,11 +39,6 @@ def _target_hours(ctl: float) -> float:
 
 
 def _detect_phase(ctl: float, tsb: float, week_in_block: int) -> str:
-    """
-    Simple 3+1 periodization:
-    Weeks 1-3 build, week 4 recovery.
-    Also force recovery if TSB is very negative.
-    """
     if tsb < -25:
         return "RECOVERY"
     if week_in_block % 4 == 0:
@@ -55,7 +51,6 @@ def _detect_phase(ctl: float, tsb: float, week_in_block: int) -> str:
 
 
 def _week_in_block() -> int:
-    """Which week of the current 4-week block are we in (1-4)?"""
     week_of_year = date.today().isocalendar()[1]
     return ((week_of_year - 1) % 4) + 1
 
@@ -66,7 +61,6 @@ def _monday_of_week(ref: date | None = None) -> date:
 
 
 def _fun_activity_days(fun_activities: list[dict]) -> set[int]:
-    """Return set of day-of-week indices (0=Mon) that have fun/casual activities."""
     days = set()
     week_start = _monday_of_week()
     for fa in fun_activities:
@@ -201,6 +195,98 @@ WORKOUT_TEMPLATES = {
     },
 }
 
+# Default workout to slot in when athlete requests a sport on a day with no template workout
+_FILLER_WORKOUTS: dict[str, dict] = {
+    "CYCLING": {"type": "EASY", "duration": 60, "zone": "Z2",
+                "purpose": "Easy aerobic ride. Zone 2 effort — added based on your schedule preference."},
+    "RUNNING": {"type": "EASY", "duration": 45, "zone": "Z2",
+                "purpose": "Easy aerobic run. Zone 2 effort — added based on your schedule preference."},
+    "XC_SKIING": {"type": "EASY", "duration": 60, "zone": "Z2",
+                  "purpose": "Easy ski session. Zone 2 effort — added based on your schedule preference."},
+    "STRENGTH": {"type": "STRENGTH", "duration": 50, "zone": None,
+                 "purpose": "Strength session — added based on your schedule preference."},
+}
+
+# Sport-specific purpose overrides when swapping a workout to a different sport
+_SPORT_SWAP_PURPOSES: dict[tuple[str, str], str] = {
+    # (original_type, new_sport): purpose
+    ("EASY", "CYCLING"): "Easy aerobic ride. Zone 2 — adjusted to your preferred sport for today.",
+    ("EASY", "RUNNING"): "Easy aerobic run. Zone 2 — adjusted to your preferred sport for today.",
+    ("EASY", "XC_SKIING"): "Easy ski session. Zone 2 — adjusted to your preferred sport for today.",
+    ("RECOVERY", "CYCLING"): "Easy recovery spin. Very low intensity — adjusted to your preferred sport.",
+    ("RECOVERY", "RUNNING"): "Easy recovery jog. HR < 130 — adjusted to your preferred sport.",
+    ("LONG", "CYCLING"): "Long aerobic ride. Zone 2 throughout — adjusted to your preferred sport.",
+    ("LONG", "RUNNING"): "Long aerobic run. Zone 2 throughout — adjusted to your preferred sport.",
+    ("LONG", "XC_SKIING"): "Long ski tour. Steady aerobic pace — adjusted to your preferred sport.",
+    ("VO2MAX", "CYCLING"): "VO2max cycling intervals. Best on a climb — adjusted to your preferred sport.",
+    ("VO2MAX", "RUNNING"): "VO2max run intervals. 5K pace efforts — adjusted to your preferred sport.",
+    ("VO2MAX", "XC_SKIING"): "VO2max ski intervals. Hard uphill reps — adjusted to your preferred sport.",
+    ("THRESHOLD", "CYCLING"): "Threshold ride. 95-105% FTP — adjusted to your preferred sport.",
+    ("THRESHOLD", "RUNNING"): "Threshold run. Comfortably hard effort — adjusted to your preferred sport.",
+    ("THRESHOLD", "XC_SKIING"): "Threshold ski. Race-pace intervals — adjusted to your preferred sport.",
+}
+
+
+def _apply_athlete_schedule(
+    workouts: list[dict],
+    schedule: list[dict],  # [{day_of_week, is_rest, preferred_sport}]
+    phase: str,
+) -> list[dict]:
+    """
+    Apply athlete schedule constraints to the generated workout list:
+    - Rest days: remove any workout on that day
+    - Preferred sport: swap the sport on that day (keep workout type)
+    - Sport on unscheduled day: insert an appropriate filler workout
+    - No preference (preferred_sport=None, is_rest=False): leave template as-is
+    """
+    if not schedule:
+        return workouts
+
+    by_day: dict[int, dict] = {w["day_of_week"]: w for w in workouts}
+    constraints: dict[int, dict] = {s["day_of_week"]: s for s in schedule}
+
+    result = dict(by_day)
+
+    for dow, constraint in constraints.items():
+        if constraint.get("is_rest"):
+            result.pop(dow, None)
+            continue
+
+        preferred = constraint.get("preferred_sport")
+        if not preferred:
+            continue  # no preference — leave template workout untouched
+
+        if dow in result:
+            existing = result[dow]
+            workout_type = existing["type"]
+
+            # Strength stays strength regardless of sport swap (can't do VO2max as "STRENGTH")
+            if preferred == "STRENGTH":
+                result[dow] = {**existing, "sport": "STRENGTH", "type": "STRENGTH", "zone": None,
+                               "purpose": "Strength session — adjusted to your schedule preference."}
+            else:
+                swapped_purpose = _SPORT_SWAP_PURPOSES.get(
+                    (workout_type, preferred),
+                    f"{workout_type.capitalize()} session — adjusted to {preferred.replace('_', ' ').lower()} per your preference.",
+                )
+                result[dow] = {**existing, "sport": preferred, "purpose": swapped_purpose}
+        else:
+            # No template workout on this day — insert a filler
+            filler = _FILLER_WORKOUTS.get(preferred)
+            if filler:
+                # Downgrade intensity in recovery phase
+                if phase == "RECOVERY":
+                    filler = {**filler, "type": "RECOVERY" if filler["type"] != "STRENGTH" else "STRENGTH",
+                              "duration": max(30, filler["duration"] - 15)}
+                result[dow] = {
+                    "day_of_week": dow,
+                    "sport": preferred,
+                    **filler,
+                }
+
+    # Re-sort by day
+    return sorted(result.values(), key=lambda w: w["day_of_week"])
+
 
 def generate_weekly_plan_data(
     athlete: "Athlete",
@@ -211,56 +297,80 @@ def generate_weekly_plan_data(
     recent_activities: list["Activity"],
     fun_activities_next_week: list[dict],
     available_routes: list["Route"],
+    athlete_schedule: list[dict] | None = None,
 ) -> dict:
     """
     Generate a weekly plan. Returns a dict ready to create WeeklyPlan + PlannedWorkout records.
+
+    athlete_schedule: list of {day_of_week: int, is_rest: bool, preferred_sport: str|None}
     """
     phase = _detect_phase(ctl, tsb, _week_in_block())
     week_start = _monday_of_week()
-    primary_sports = get_primary_sports(season)
 
-    # Get workout templates for this season/phase
     templates = WORKOUT_TEMPLATES.get(season, WORKOUT_TEMPLATES["CYCLING_RUNNING"])
     phase_templates = templates.get(phase, templates["BASE"])
 
-    # Scale duration by CTL-derived volume target vs base template total
     target_hours = _target_hours(ctl)
     if phase == "RECOVERY":
         target_hours *= 0.65
 
     template_hours = sum(t["duration"] for t in phase_templates) / 60
     scale = target_hours / template_hours if template_hours > 0 else 1.0
-    scale = max(0.7, min(1.4, scale))  # clamp
+    scale = max(0.7, min(1.4, scale))
 
-    # Identify blocked days (fun activities + day after)
     fun_days = _fun_activity_days(fun_activities_next_week)
     blocked_days = fun_days.copy()
     for d in list(fun_days):
-        blocked_days.add((d + 1) % 7)  # day after is also light
+        blocked_days.add((d + 1) % 7)
 
-    workouts = []
+    # Build initial workout list from template
+    raw_workouts = []
     for tmpl in phase_templates:
         dow = tmpl["day"]
         if dow in blocked_days and tmpl["type"] not in ("RECOVERY", "EASY"):
-            # Downgrade hard sessions on/after fun activity days
             adjusted = {**tmpl, "type": "EASY", "zone": "Z2",
                         "purpose": f"Downgraded to easy: recovery from nearby fun activity. {tmpl['purpose']}"}
         else:
             adjusted = {**tmpl}
 
-        scaled_duration = round(adjusted["duration"] * scale / 5) * 5  # round to 5 min
+        scaled_duration = round(adjusted["duration"] * scale / 5) * 5
 
-        # Terrain matching for outdoor cycling intervals
+        raw_workouts.append({
+            "day_of_week": dow,
+            "sport": adjusted["sport"],
+            "workout_type": adjusted["type"],
+            "duration_minutes": scaled_duration,
+            "intensity_zone": adjusted.get("zone"),
+            "purpose": adjusted["purpose"],
+            "suggested_route_id": None,
+            "terrain_notes": None,
+        })
+
+    # Apply athlete schedule constraints
+    constrained = _apply_athlete_schedule(
+        [{**w, "type": w["workout_type"]} for w in raw_workouts],
+        athlete_schedule or [],
+        phase,
+    )
+
+    # Terrain matching + finalize
+    workouts = []
+    for w in constrained:
+        workout_type = w.get("workout_type") or w.get("type", "EASY")
+        sport = w["sport"]
+        duration = w["duration_minutes"]
+
         route_match = None
-        terrain_notes = None
-        if (adjusted["sport"] == "CYCLING"
-                and adjusted["type"] in ("VO2MAX", "THRESHOLD", "TEMPO")
+        terrain_notes = w.get("terrain_notes")
+
+        if (sport == "CYCLING"
+                and workout_type in ("VO2MAX", "THRESHOLD", "TEMPO")
                 and available_routes
                 and athlete.ftp_watts):
             match = match_route_to_workout(
-                workout_type=adjusted["type"],
-                target_duration_min=scaled_duration,
-                target_intensity=adjusted["type"],
+                workout_type=workout_type,
+                target_duration_min=duration,
+                target_intensity=workout_type,
                 available_routes=available_routes,
                 athlete_ftp=athlete.ftp_watts,
             )
@@ -271,12 +381,12 @@ def generate_weekly_plan_data(
                 terrain_notes += f" | Adaptation: {match['modification_suggestion']}"
 
         workouts.append({
-            "day_of_week": dow,
-            "sport": adjusted["sport"],
-            "workout_type": adjusted["type"],
-            "duration_minutes": scaled_duration,
-            "intensity_zone": adjusted.get("zone"),
-            "purpose": adjusted["purpose"],
+            "day_of_week": w["day_of_week"],
+            "sport": sport,
+            "workout_type": workout_type,
+            "duration_minutes": duration,
+            "intensity_zone": w.get("intensity_zone"),
+            "purpose": w["purpose"],
             "suggested_route_id": route_match,
             "terrain_notes": terrain_notes,
         })
