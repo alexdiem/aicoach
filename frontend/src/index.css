@@ -3,5 +3,11 @@
 @tailwind utilities;
 
 body {
-  @apply bg-gray-950 text-gray-100 antialiased;
+  @apply bg-black text-lime-400 font-mono;
+  margin: 0;
+  padding: 0;
+}
+
+* {
+  border-radius: 0 !important;
 }

@@ -1,14 +1,13 @@
 import { NavLink } from 'react-router-dom'
 import { type ReactNode, useState } from 'react'
-import { LayoutDashboard, CalendarDays, Map, Settings, Bot } from 'lucide-react'
 import clsx from 'clsx'
 import { getModelPref, setModelPref, type ModelPref } from '../api/client'
 
 const nav = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/plan', label: 'Plan', icon: CalendarDays },
-  { to: '/routes', label: 'Routes', icon: Map },
-  { to: '/settings', label: 'Settings', icon: Settings },
+  { to: '/', label: 'DASHBOARD' },
+  { to: '/plan', label: 'PLAN' },
+  { to: '/routes', label: 'ROUTES' },
+  { to: '/settings', label: 'SETTINGS' },
 ]
 
 export default function Layout({ children }: { children: ReactNode }) {
@@ -20,59 +19,60 @@ export default function Layout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen flex bg-zinc-950">
-      <nav className="w-52 shrink-0 bg-zinc-900 border-r border-zinc-800 flex flex-col p-3">
-        <div className="px-3 py-4 mb-2">
-          <span className="text-lg font-bold tracking-tight text-white">ai<span className="text-blue-400">coach</span></span>
+    <div className="min-h-screen flex bg-black font-mono">
+      <nav className="w-48 shrink-0 bg-black border-r border-lime-400/30 flex flex-col p-0">
+        {/* Logo */}
+        <div className="px-4 py-5 border-b border-lime-400/30">
+          <span className="text-lg font-bold tracking-tight text-lime-400 font-mono">[AICOACH]</span>
         </div>
-        <div className="flex flex-col gap-0.5">
-          {nav.map(({ to, label, icon: Icon }) => (
+
+        {/* Nav items */}
+        <div className="flex flex-col mt-2">
+          {nav.map(({ to, label }) => (
             <NavLink
               key={to}
               to={to}
               end={to === '/'}
               className={({ isActive }) =>
                 clsx(
-                  'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all',
+                  'block px-4 py-2.5 text-xs font-mono font-medium tracking-widest transition-all border-b border-lime-400/10',
                   isActive
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800',
+                    ? 'bg-lime-400 text-black'
+                    : 'text-lime-400/60 hover:bg-lime-400 hover:text-black',
                 )
               }
             >
-              <Icon size={16} strokeWidth={1.75} />
-              {label}
+              &gt; {label}
             </NavLink>
           ))}
         </div>
 
         {/* Model selector */}
-        <div className="mt-auto pt-4 border-t border-zinc-800">
-          <div className="px-1 mb-1.5 flex items-center gap-1.5 text-[10px] text-zinc-600 uppercase tracking-wider">
-            <Bot size={10} /> AI Model
-          </div>
-          <div className="flex rounded-lg overflow-hidden border border-zinc-700 text-xs font-medium">
+        <div className="mt-auto border-t border-lime-400/30 p-4">
+          <p className="text-[10px] text-lime-400/40 uppercase tracking-widest mb-2">AI MODEL</p>
+          <div className="flex border border-lime-400/30 overflow-hidden">
             {(['haiku', 'sonnet'] as ModelPref[]).map((m) => (
               <button
                 key={m}
                 onClick={() => toggleModel(m)}
                 className={clsx(
-                  'flex-1 py-1.5 transition-colors capitalize',
+                  'flex-1 py-1.5 text-[10px] font-mono uppercase tracking-widest transition-colors',
                   model === m
-                    ? 'bg-zinc-700 text-white'
-                    : 'text-zinc-500 hover:text-zinc-300',
+                    ? 'bg-lime-400 text-black'
+                    : 'text-lime-400/50 hover:bg-lime-400 hover:text-black',
                 )}
               >
                 {m}
               </button>
             ))}
           </div>
-          <p className="mt-1.5 px-1 text-[10px] text-zinc-600 leading-snug">
-            {model === 'haiku' ? 'Fast · lower cost' : 'Smarter · higher cost'}
+          <p className="mt-1.5 text-[9px] text-lime-400/30 leading-snug font-mono">
+            {model === 'haiku' ? 'FAST · LOWER COST' : 'SMARTER · HIGHER COST'}
           </p>
         </div>
       </nav>
-      <main className="flex-1 overflow-auto">
+
+      <main className="flex-1 overflow-auto bg-black">
         <div className="max-w-6xl mx-auto px-6 py-8">{children}</div>
       </main>
     </div>

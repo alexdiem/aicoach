@@ -1,25 +1,15 @@
 import { format, parseISO } from 'date-fns'
 import type { Activity } from '../types'
 
-const TYPE_ICONS: Record<string, string> = {
-  CYCLING: '🚴',
-  RUNNING: '🏃',
-  XC_SKIING: '⛷️',
-  HIKING: '🥾',
-  CLIMBING: '🧗',
-  STRENGTH: '💪',
-  OTHER: '🏋️',
-}
-
 function formatDuration(seconds: number) {
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
-  return h > 0 ? `${h}h ${m}m` : `${m}m`
+  return h > 0 ? `${h}H${m}M` : `${m}M`
 }
 
 function formatDistance(meters: number | null) {
   if (!meters) return null
-  return meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters)} m`
+  return meters >= 1000 ? `${(meters / 1000).toFixed(1)}KM` : `${Math.round(meters)}M`
 }
 
 interface Props {
@@ -29,51 +19,51 @@ interface Props {
 export default function ActivityFeed({ activities }: Props) {
   if (activities.length === 0) {
     return (
-      <p className="text-zinc-500 text-sm py-4 text-center">
-        No activities yet. Connect Garmin and sync from Settings.
+      <p className="text-lime-400/40 text-xs font-mono py-4 text-center">
+        NO ACTIVITIES YET. CONNECT GARMIN AND SYNC FROM SETTINGS.
       </p>
     )
   }
 
   return (
-    <div className="flex flex-col">
-      {activities.map((a, i) => (
+    <div className="font-mono">
+      {/* Table header */}
+      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-4 pb-1 mb-1 border-b border-lime-400/30">
+        <span className="text-[10px] text-lime-400/40 uppercase tracking-widest">TYPE</span>
+        <span className="text-[10px] text-lime-400/40 uppercase tracking-widest">DATE</span>
+        <span className="text-[10px] text-lime-400/40 uppercase tracking-widest">STATS</span>
+        <span className="text-[10px] text-lime-400/40 uppercase tracking-widest text-right">TSS</span>
+      </div>
+      {activities.map((a) => (
         <div
           key={a.id}
-          className={`flex items-center gap-3 py-3 ${i < activities.length - 1 ? 'border-b border-zinc-800' : ''}`}
+          className="grid grid-cols-[1fr_auto_auto_auto] gap-4 py-2 border-b border-lime-400/10 last:border-0 items-center"
         >
-          <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center text-base shrink-0">
-            {TYPE_ICONS[a.activity_type] ?? '🏋️'}
+          <div className="min-w-0">
+            <span className="text-xs text-lime-400 font-mono uppercase">
+              {a.activity_type.replace('_', ' ')}
+            </span>
+            {a.sport_category === 'CASUAL' && (
+              <span className="ml-2 text-[9px] text-lime-400/30 font-mono border border-lime-400/20 px-1">CASUAL</span>
+            )}
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-zinc-100 capitalize">
-                {a.activity_type.replace('_', ' ').toLowerCase()}
-              </span>
-              {a.sport_category === 'CASUAL' && (
-                <span className="text-xs text-zinc-500 bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded-full">
-                  casual
-                </span>
-              )}
-            </div>
-            <div className="text-xs text-zinc-500 mt-0.5">
-              {format(parseISO(a.start_time), 'EEE d MMM')}
-              {' · '}
-              {formatDuration(a.duration_seconds)}
-              {formatDistance(a.distance_meters) && ` · ${formatDistance(a.distance_meters)}`}
-              {a.elevation_gain_meters && ` · ↑${Math.round(a.elevation_gain_meters)}m`}
-            </div>
+          <span className="text-[10px] text-lime-400/50 font-mono tabular-nums whitespace-nowrap">
+            {format(parseISO(a.start_time), 'EEE d MMM').toUpperCase()}
+          </span>
+          <div className="text-[10px] text-lime-400/50 font-mono whitespace-nowrap tabular-nums">
+            {formatDuration(a.duration_seconds)}
+            {formatDistance(a.distance_meters) && <span className="ml-1">{formatDistance(a.distance_meters)}</span>}
+            {a.elevation_gain_meters && <span className="ml-1">+{Math.round(a.elevation_gain_meters)}M</span>}
+            {a.avg_heart_rate && <span className="ml-1">{Math.round(a.avg_heart_rate)}BPM</span>}
           </div>
-          <div className="text-right shrink-0">
+          <div className="text-right">
             {a.training_stress_score ? (
-              <div className="text-sm font-bold text-blue-400 tabular-nums">
+              <span className="text-sm font-bold text-lime-400 font-mono tabular-nums">
                 {Math.round(a.training_stress_score)}
-                <span className="text-zinc-600 text-xs font-normal ml-0.5">TSS</span>
-              </div>
-            ) : null}
-            {a.avg_heart_rate ? (
-              <div className="text-xs text-zinc-500 tabular-nums">{Math.round(a.avg_heart_rate)} bpm</div>
-            ) : null}
+              </span>
+            ) : (
+              <span className="text-lime-400/20 text-xs font-mono">—</span>
+            )}
           </div>
         </div>
       ))}
