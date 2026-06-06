@@ -148,12 +148,19 @@ function SessionPlan({
 
       {/* Route summary */}
       {session.route_summary && (
-        <div className="flex items-center gap-3 mb-4 text-xs text-zinc-400 bg-zinc-800/60 rounded-xl px-3 py-2 flex-wrap">
-          <span>🗺 {session.route_summary.distance_km} km</span>
-          <span className="text-zinc-600">·</span>
-          <span>↑ {session.route_summary.elevation_gain_m} m</span>
-          <span className="text-zinc-600">·</span>
-          <span>≈ {Math.floor(session.route_summary.estimated_minutes / 60)}h{session.route_summary.estimated_minutes % 60 > 0 ? ` ${session.route_summary.estimated_minutes % 60}min` : ''}</span>
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          <div className="flex items-center gap-3 text-xs text-zinc-400 bg-zinc-800/60 rounded-xl px-3 py-2">
+            <span>🗺 {session.route_summary.distance_km} km</span>
+            <span className="text-zinc-600">·</span>
+            <span>↑ {session.route_summary.elevation_gain_m} m</span>
+            <span className="text-zinc-600">·</span>
+            <span>≈ {Math.floor(session.route_summary.estimated_minutes / 60)}h{session.route_summary.estimated_minutes % 60 > 0 ? ` ${session.route_summary.estimated_minutes % 60}min` : ''}</span>
+          </div>
+          {session.route_summary.full_route_km && (
+            <span className="text-xs text-amber-400/80 bg-amber-950/40 border border-amber-900/50 rounded-xl px-3 py-2">
+              ⚠ Route is {session.route_summary.full_route_km} km total — turn around at ~{session.route_summary.distance_km} km
+            </span>
+          )}
         </div>
       )}
 

@@ -91,6 +91,7 @@ export interface StructuredSession {
     distance_km: number
     elevation_gain_m: number
     estimated_minutes: number
+    full_route_km: number | null
   } | null
 }
 

@@ -33,7 +33,7 @@ def build_structured_session(
     # For structured workouts (VO2MAX / THRESHOLD / TEMPO) on a cycling route:
     # build a ride-the-route session instead of repeat intervals.
     if sport == "CYCLING" and _has_route_segments(route):
-        return _build_route_ride(workout_type, sport, athlete_ftp, athlete_lthr, route)
+        return _build_route_ride(workout_type, duration_minutes, sport, athlete_ftp, athlete_lthr, route)
 
     if workout_type == "VO2MAX":
         return _build_vo2max_intervals(duration_minutes, sport, athlete_ftp, athlete_lthr)
@@ -101,12 +101,18 @@ def _make_session(warmup_min, warmup_notes, intervals, cooldown_min, cooldown_no
 
 # ─── Route-ride builder (full route, climb-by-climb) ──────────────────────────
 
-def _build_route_ride(workout_type: str, sport: str, ftp: float | None, lthr: float | None, route: "Route") -> dict:
+_ROUTE_FIT_RATIO = 1.3   # route within 30% of planned → ride the whole thing
+_ROUTE_MAX_RATIO = 2.5   # route more than 2.5× planned → ignore route, do intervals
+
+
+def _build_route_ride(workout_type: str, duration_minutes: int, sport: str, ftp: float | None, lthr: float | None, route: "Route") -> dict:
     """
-    Build a session for riding the complete route.
-    Each climb segment becomes a timed effort; flat/descent sections between
-    them are marked as Z2 recovery. Total duration is estimated from the
-    actual route distance and elevation, not the plan template.
+    Build a session structured around a cycling route, but bounded by duration_minutes.
+
+    Three cases based on how the route's estimated time compares to the planned duration:
+      ≤ 1.3× planned   → ride the full route (route fits the slot)
+      1.3–2.5× planned → ride only the portion that fits; add a turn-around note
+      > 2.5× planned   → route is too long to be meaningful; fall back to generic intervals
     """
     analysis = route.analysis or {}
     dist_km = analysis.get("total_distance_m", 0) / 1000
@@ -114,6 +120,33 @@ def _build_route_ride(workout_type: str, sport: str, ftp: float | None, lthr: fl
     all_segments = sorted(analysis.get("segments", []), key=lambda s: s.get("start_km", 0))
 
     estimated_total = _estimate_route_time_min(dist_km, gain_m)
+    ratio = estimated_total / max(duration_minutes, 1)
+
+    # Route is far too long — fall back to intervals so we don't plan a 4h workout for a 1h slot
+    if ratio > _ROUTE_MAX_RATIO:
+        if workout_type == "VO2MAX":
+            return _build_vo2max_intervals(duration_minutes, sport, ftp, lthr)
+        if workout_type == "THRESHOLD":
+            return _build_threshold_intervals(duration_minutes, sport, ftp, lthr)
+        return _build_tempo_intervals(duration_minutes, sport, ftp, lthr)
+
+    # Decide how much of the route we actually cover
+    if ratio <= _ROUTE_FIT_RATIO:
+        reachable_km = dist_km
+        actual_total = estimated_total
+        turnback_note = None
+    else:
+        # Proportion of route that fits within the planned window
+        fraction = duration_minutes / estimated_total
+        reachable_km = round(dist_km * fraction, 1)
+        actual_total = duration_minutes
+        turnback_note = (
+            f"The full route takes ~{estimated_total} min but your plan budgets {duration_minutes} min. "
+            f"Turn around at approximately km {reachable_km:.0f} to stay within your training load."
+        )
+
+    # Only include segments reachable within the planned duration
+    active_segments = [s for s in all_segments if s.get("start_km", 0) < reachable_km]
 
     # Decide which climbs get hard efforts vs stay easy, based on workout type
     if workout_type == "VO2MAX":
@@ -138,11 +171,11 @@ def _build_route_ride(workout_type: str, sport: str, ftp: float | None, lthr: fl
         hard_label = "Steady tempo — not easy, not a struggle"
         easy_label = hard_label
 
-    hard_segs = [s for s in all_segments if s["category"] in hard_cats]
+    hard_segs = [s for s in active_segments if s["category"] in hard_cats]
     hard_rep_count = len(hard_segs)
 
     # Warmup: time from start to first climb (or first ~5km, whichever is less)
-    first_km = all_segments[0]["start_km"] if all_segments else dist_km * 0.2
+    first_km = active_segments[0]["start_km"] if active_segments else reachable_km * 0.2
     warmup_min = max(8, round(min(first_km, 8.0) / 28 * 60))
     warmup_notes = (
         f"First {first_km:.1f} km at Z2 to warm up the legs. "
@@ -153,7 +186,7 @@ def _build_route_ride(workout_type: str, sport: str, ftp: float | None, lthr: fl
     prev_end_km = first_km
     hard_rep = 0
 
-    for seg in all_segments:
+    for seg in active_segments:
         # Gap between previous segment end and this segment start
         gap_km = seg["start_km"] - prev_end_km
         if gap_km > 0.3:
@@ -197,20 +230,21 @@ def _build_route_ride(workout_type: str, sport: str, ftp: float | None, lthr: fl
         intervals.append(step)
         prev_end_km = seg["end_km"]
 
-    # Cooldown: remainder of route after last climb
-    remaining_km = dist_km - prev_end_km
+    # Cooldown: remainder of reachable route after last climb
+    remaining_km = reachable_km - prev_end_km
     cooldown_min = max(5, round(remaining_km / 32 * 60))
-    cooldown_notes = (
-        f"Final {remaining_km:.1f} km at Z2 — spin out, let HR drop, enjoy the finish."
-    )
+    if turnback_note:
+        cooldown_notes = f"Easy Z2 to your turn-around point (~km {reachable_km:.0f}). {turnback_note}"
+    else:
+        cooldown_notes = f"Final {remaining_km:.1f} km at Z2 — spin out, let HR drop, enjoy the finish."
 
     session = _make_session(warmup_min, warmup_notes, intervals, cooldown_min, cooldown_notes, route)
-    # Override total to the realistic route estimate (warmup + intervals ≠ full ride)
-    session["total_duration_minutes"] = estimated_total
+    session["total_duration_minutes"] = actual_total
     session["route_summary"] = {
-        "distance_km": round(dist_km, 1),
-        "elevation_gain_m": round(gain_m),
-        "estimated_minutes": estimated_total,
+        "distance_km": round(reachable_km, 1),
+        "elevation_gain_m": round(gain_m * (reachable_km / dist_km)) if dist_km else 0,
+        "estimated_minutes": actual_total,
+        "full_route_km": round(dist_km, 1) if turnback_note else None,
     }
     return session
 
@@ -324,32 +358,51 @@ def _build_long(duration_minutes: int, sport: str, route: "Route | None") -> dic
     analysis = route.analysis if route and route.analysis else {}
     dist_km = analysis.get("total_distance_m", 0) / 1000
     gain_m = analysis.get("total_gain_m", 0)
-    estimated_total = _estimate_route_time_min(dist_km, gain_m) if dist_km else duration_minutes
 
-    notes = (
-        f"Steady Zone 2 {label}. Fully conversational throughout — back off on climbs to stay in Z2. "
-        "Eat every 30–45 min. This session builds the aerobic engine."
-    )
-    if dist_km:
+    if not dist_km:
+        estimated_total = duration_minutes
         notes = (
-            f"Ride the full {dist_km:.0f} km route at Z2 (est. {estimated_total} min). "
+            f"Steady Zone 2 {label}. Fully conversational throughout — back off on climbs to stay in Z2. "
+            "Eat every 30–45 min. This session builds the aerobic engine."
+        )
+        turnback_note = None
+    else:
+        route_time = _estimate_route_time_min(dist_km, gain_m)
+        ratio = route_time / max(duration_minutes, 1)
+        if ratio <= _ROUTE_FIT_RATIO:
+            estimated_total = route_time
+            reachable_km = dist_km
+            turnback_note = None
+        else:
+            estimated_total = duration_minutes
+            reachable_km = round(dist_km * duration_minutes / route_time, 1)
+            turnback_note = (
+                f"Full route is ~{route_time} min — turn around at ~km {reachable_km:.0f} "
+                f"to keep this a {duration_minutes}-min session."
+            )
+        notes = (
+            f"Z2 {label} of {reachable_km:.0f} km (est. {estimated_total} min). "
             "Stay conversational on every climb — resistance is fine, suffering is not. "
             "Eat every 30–45 min."
         )
+        if turnback_note:
+            notes += f" {turnback_note}"
 
     intervals = [{"type": "work", "rep": 1, "total_reps": 1,
-                  "duration_minutes": (estimated_total - warmup - cooldown) if dist_km else (duration_minutes - warmup - cooldown),
+                  "duration_minutes": estimated_total - warmup - cooldown,
                   "target": "Z2 — fully conversational throughout",
                   "notes": notes, "segment": None}]
 
     session = _make_session(warmup, "Start easy — settle into aerobic pace over the first 10 min.",
-                            intervals, cooldown, "Easy final km to flush legs.",
-                            route)
+                            intervals, cooldown, "Easy final km to flush legs.", route)
+    session["total_duration_minutes"] = estimated_total
     if dist_km:
-        session["total_duration_minutes"] = estimated_total
-        session["route_summary"] = {"distance_km": round(dist_km, 1),
-                                    "elevation_gain_m": round(gain_m),
-                                    "estimated_minutes": estimated_total}
+        session["route_summary"] = {
+            "distance_km": round(reachable_km, 1),
+            "elevation_gain_m": round(gain_m * (reachable_km / dist_km)),
+            "estimated_minutes": estimated_total,
+            "full_route_km": round(dist_km, 1) if turnback_note else None,
+        }
     return session
 
 
@@ -358,17 +411,35 @@ def _build_easy(duration_minutes: int, sport: str, route: "Route | None") -> dic
     analysis = route.analysis if route and route.analysis else {}
     dist_km = analysis.get("total_distance_m", 0) / 1000
     gain_m = analysis.get("total_gain_m", 0)
-    estimated_total = _estimate_route_time_min(dist_km, gain_m) if dist_km else duration_minutes
 
-    notes = (
-        f"Easy {label}. Heart rate well below threshold — no laboured breathing. "
-        "Don't let enthusiasm push you into Z3."
-    )
-    if dist_km:
+    if not dist_km:
+        estimated_total = duration_minutes
         notes = (
-            f"Easy {label} of the full {dist_km:.0f} km route (est. {estimated_total} min). "
-            "Z1–Z2 throughout — back off on every climb to stay aerobic."
+            f"Easy {label}. Heart rate well below threshold — no laboured breathing. "
+            "Don't let enthusiasm push you into Z3."
         )
+        route_summary = None
+    else:
+        route_time = _estimate_route_time_min(dist_km, gain_m)
+        ratio = route_time / max(duration_minutes, 1)
+        if ratio <= _ROUTE_FIT_RATIO:
+            estimated_total = route_time
+            reachable_km = dist_km
+            turnback = ""
+        else:
+            estimated_total = duration_minutes
+            reachable_km = round(dist_km * duration_minutes / route_time, 1)
+            turnback = f" Turn around at ~km {reachable_km:.0f} to keep it to {duration_minutes} min."
+        notes = (
+            f"Easy {label} of {reachable_km:.0f} km (est. {estimated_total} min). "
+            f"Z1–Z2 throughout — back off on every climb to stay aerobic.{turnback}"
+        )
+        route_summary = {
+            "distance_km": round(reachable_km, 1),
+            "elevation_gain_m": round(gain_m * (reachable_km / dist_km)),
+            "estimated_minutes": estimated_total,
+            "full_route_km": round(dist_km, 1) if turnback else None,
+        }
 
     session = {
         "warmup_minutes": 0, "warmup_notes": None,
@@ -381,10 +452,8 @@ def _build_easy(duration_minutes: int, sport: str, route: "Route | None") -> dic
         "route_name": route.name if route else None,
         "total_duration_minutes": estimated_total,
     }
-    if dist_km:
-        session["route_summary"] = {"distance_km": round(dist_km, 1),
-                                    "elevation_gain_m": round(gain_m),
-                                    "estimated_minutes": estimated_total}
+    if route_summary:
+        session["route_summary"] = route_summary
     return session
 
 
