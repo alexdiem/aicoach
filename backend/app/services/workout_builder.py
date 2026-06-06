@@ -119,28 +119,92 @@ def _make_session(warmup_min, warmup_notes, intervals, cooldown_min, cooldown_no
 
 # ─── Route-ride builder (full route, workout carved into best section) ───────
 
+# Maximum rest (in minutes) between hard efforts for each workout type.
+# Gaps larger than this mean the climbs are too far apart to form a coherent session.
+_MAX_REST_BETWEEN_EFFORTS: dict[str, float] = {
+    "VO2MAX": 8.0,     # ~1:1 work-to-rest; 6min effort → 6-8min recovery
+    "THRESHOLD": 12.0, # sustained work benefits from longer rest, but not endless
+    "TEMPO": 20.0,     # lower intensity, wider tolerance
+}
+_DESCENT_SPEED_KMH = 32.0  # speed used to estimate gap/descent time
+
+
+def _gap_minutes(end_km: float, start_km: float) -> float:
+    return max(0.0, (start_km - end_km) / _DESCENT_SPEED_KMH * 60)
+
+
+def _find_best_cluster(
+    primary_candidates: list[dict],
+    hard_budget_min: float,
+    max_rest_min: float,
+    rank_fn,
+) -> list[dict]:
+    """
+    Find the best cluster of consecutive primary segments where no adjacent gap
+    exceeds max_rest_min and total hard-effort time fits within hard_budget_min.
+
+    Algorithm:
+      1. Sort candidates by route position.
+      2. Split into clusters wherever the gap between consecutive candidates
+         exceeds max_rest_min.
+      3. For each cluster, take the top-ranked segments that fit the budget.
+      4. Return the cluster with the most total hard-effort time (best stimulus).
+    """
+    if not primary_candidates:
+        return []
+
+    by_pos = sorted(primary_candidates, key=lambda s: s["start_km"])
+
+    # Split into clusters
+    clusters: list[list[dict]] = [[by_pos[0]]]
+    for seg in by_pos[1:]:
+        gap = _gap_minutes(clusters[-1][-1]["end_km"], seg["start_km"])
+        if gap <= max_rest_min:
+            clusters[-1].append(seg)
+        else:
+            clusters.append([seg])
+
+    # For each cluster, greedily pick top-ranked segments up to budget
+    best: list[dict] = []
+    best_work = 0.0
+
+    for cluster in clusters:
+        ranked = sorted(cluster, key=rank_fn)
+        selected: list[dict] = []
+        work = 0.0
+        for seg in ranked:
+            t = seg["est_duration_at_ftp_min"]
+            if work + t <= hard_budget_min:
+                selected.append(seg)
+                work += t
+        if work > best_work:
+            best_work = work
+            best = selected
+
+    return best
+
 
 def _build_route_ride(workout_type: str, duration_minutes: int, sport: str, ftp: float | None, lthr: float | None, route: "Route") -> dict:
     """
     The athlete always completes the full route.
 
-    Rather than truncating at a time budget, we carve the structured workout
-    into the section of terrain best suited to it:
-      - VO2MAX: short/medium climbs → hard VO2max efforts; long climbs → easy Z2
-      - THRESHOLD: long/medium climbs → sustained threshold; short punches → Z2
-      - TEMPO: all climbs at tempo; flat sections at steady endurance
+    The structured workout is carved into the section of the route that contains
+    the best cluster of suitable climbs — i.e. climbs close enough together that
+    the recovery rides between them are short and intentional, not exhausting
+    free-rides. Everything outside the cluster is pure free riding.
 
-    duration_minutes controls the *target volume of hard work* — if the route
-    has more matching climbs than the budget allows, we select only the best
-    ones and ride the rest of the route at Z2. Everything before the first
-    selected climb is a free-ride warmup; everything after the last is a
-    free-ride home.
+    Selection logic per workout type:
+      VO2MAX    → SHORT_PUNCH / MEDIUM_CLIMB (closest to 6 min); max 8 min gap
+      THRESHOLD → LONG_CLIMB / MEDIUM_CLIMB  (longest duration first); max 12 min gap
+      TEMPO     → all climbs in route order; max 20 min gap
     """
     analysis = route.analysis or {}
     dist_km = analysis.get("total_distance_m", 0) / 1000
     gain_m = analysis.get("total_gain_m", 0)
     all_segments = sorted(analysis.get("segments", []), key=lambda s: s.get("start_km", 0))
     estimated_total = _estimate_route_time_min(dist_km, gain_m)
+
+    max_rest_min = _MAX_REST_BETWEEN_EFFORTS.get(workout_type, 12.0)
 
     # ── Workout configuration by type ────────────────────────────────────────
     if workout_type == "VO2MAX":
@@ -149,18 +213,16 @@ def _build_route_ride(workout_type: str, duration_minutes: int, sport: str, ftp:
         primary_target = _ftp_target(110, 120, ftp)
         primary_label = "VO2max — breathe hard, hold form"
         secondary_target = _ftp_target(80, 87, ftp)
-        secondary_label = "Long climb — keep it Z2/Z3, save legs for the punchy bits"
-        # VO2max: sort by duration closest to 5–8 min (sweet spot for VO2 stimulus)
-        def _rank(s): return abs(s["est_duration_at_ftp_min"] - 6)
+        secondary_label = "Long climb — stay Z2/Z3, save the legs"
+        def _rank(s): return abs(s["est_duration_at_ftp_min"] - 6)  # closest to 6 min ideal
     elif workout_type == "THRESHOLD":
         primary_cats = {"LONG_CLIMB", "MEDIUM_CLIMB"}
         secondary_cats = {"SHORT_PUNCH"}
         primary_target = _ftp_target(95, 105, ftp)
         primary_label = "Threshold — comfortably hard, steady power"
         secondary_target = _ftp_target(80, 88, ftp)
-        secondary_label = "Short punch — stay controlled, don't blow up"
-        # Threshold: prefer longer climbs (more time at threshold = more stimulus)
-        def _rank(s): return -s["est_duration_at_ftp_min"]
+        secondary_label = "Short punch — controlled, don't blow up"
+        def _rank(s): return -s["est_duration_at_ftp_min"]  # longest first
     else:  # TEMPO
         primary_cats = {"LONG_CLIMB", "MEDIUM_CLIMB", "SHORT_PUNCH"}
         secondary_cats: set = set()
@@ -168,57 +230,61 @@ def _build_route_ride(workout_type: str, duration_minutes: int, sport: str, ftp:
         primary_label = "Steady tempo — not easy, not a struggle"
         secondary_target = primary_target
         secondary_label = primary_label
-        def _rank(s): return s.get("start_km", 0)  # tempo: just ride them in order
+        def _rank(s): return s.get("start_km", 0)  # ride in order
 
-    # ── Select primary (hard) segments within the duration budget ─────────────
-    primary_candidates = sorted(
-        [s for s in all_segments if s["category"] in primary_cats],
-        key=_rank,
-    )
-    # Budget: allow hard efforts to fill up to 60% of planned duration
-    # (remaining is recovery riding between them)
+    # ── Select a coherent cluster of hard segments ────────────────────────────
+    primary_candidates = [s for s in all_segments if s["category"] in primary_cats]
     hard_budget_min = duration_minutes * 0.60
-    selected_primary: list[dict] = []
-    hard_total = 0.0
-    for seg in primary_candidates:
-        t = seg["est_duration_at_ftp_min"]
-        if hard_total + t <= hard_budget_min:
-            selected_primary.append(seg)
-            hard_total += t
-        # Once we've hit budget, remaining primary climbs become secondary (Z2/Z3)
-
+    selected_primary = _find_best_cluster(primary_candidates, hard_budget_min, max_rest_min, _rank)
     selected_primary_ids = {id(s) for s in selected_primary}
 
-    # Warmup = Z2 free ride to the first climb
+    # Determine the geographic bounds of the structured section
+    cluster_start_km = selected_primary[0]["start_km"] if selected_primary else None
+    cluster_end_km   = selected_primary[-1]["end_km"]   if selected_primary else None
+
+    # Warmup = free ride from start to first selected hard climb
     first_km = all_segments[0]["start_km"] if all_segments else dist_km * 0.1
     warmup_min = max(8, round(min(first_km, 10.0) / 28 * 60))
-    warmup_notes = (
-        f"First {first_km:.1f} km at easy Z2 — free ride to settle in before the terrain starts."
-    )
+
+    if cluster_start_km is not None and cluster_start_km > first_km + 1.0:
+        ride_in_km = cluster_start_km - first_km
+        ride_in_min = max(5, round(ride_in_km / _DESCENT_SPEED_KMH * 60))
+        warmup_notes = (
+            f"First {first_km:.1f} km at Z2 to warm up. "
+            f"Then free ride {ride_in_min} min to the workout section (km {cluster_start_km:.1f})."
+        )
+    else:
+        warmup_notes = (
+            f"First {first_km:.1f} km at easy Z2 — settle in before the terrain starts."
+        )
 
     # ── Build interval list walking the route in km order ────────────────────
-    # Categorise every segment as: selected hard / secondary easy / skipped (flat/rolling)
     intervals: list[dict] = []
-    prev_end_km = first_km  # warmup already covers the ride to the first segment
+    prev_end_km = first_km
     hard_rep = 0
     hard_rep_count = len(selected_primary)
 
     for seg in all_segments:
         gap_km = seg["start_km"] - prev_end_km
         if gap_km > 0.5:
-            gap_min = max(2, round(gap_km / 32 * 60))
-            intervals.append({
-                "type": "rest",
-                "duration_minutes": gap_min,
-                "notes": (
+            gap_min = max(2, round(gap_km / _DESCENT_SPEED_KMH * 60))
+            # Label the gap: structured recovery if inside the cluster, free ride if outside
+            inside_cluster = (
+                cluster_start_km is not None
+                and prev_end_km >= cluster_start_km - 0.1
+                and seg["start_km"] <= cluster_end_km + 0.1
+            )
+            if inside_cluster:
+                gap_label = f"Recovery — {gap_min} min easy spin before next climb. Drink, breathe."
+            else:
+                gap_label = (
                     f"Km {prev_end_km:.1f}→{seg['start_km']:.1f}: free ride / Z2. "
-                    "Recover, take a drink, enjoy the scenery."
-                ),
-            })
+                    "No structured effort here — enjoy the scenery."
+                )
+            intervals.append({"type": "rest", "duration_minutes": gap_min, "notes": gap_label})
 
         is_hard = id(seg) in selected_primary_ids
         is_secondary = (not is_hard) and seg["category"] in secondary_cats
-        is_overbudget_primary = (not is_hard) and seg["category"] in primary_cats
 
         dur = max(1, round(seg["est_duration_at_ftp_min"]))
         length_str = (
@@ -240,7 +306,10 @@ def _build_route_ride(workout_type: str, duration_minutes: int, sport: str, ftp:
                 "notes": f"{base_desc} {primary_label}.",
                 "segment": seg,
             }
-        elif is_secondary:
+        elif is_secondary and id(seg) in {id(s) for s in all_segments
+                                          if cluster_start_km is not None
+                                          and s["start_km"] >= cluster_start_km
+                                          and s["end_km"] <= cluster_end_km + 0.1}:
             step = {
                 "type": "rest",
                 "duration_minutes": dur,
@@ -249,12 +318,10 @@ def _build_route_ride(workout_type: str, duration_minutes: int, sport: str, ftp:
                 "segment": seg,
             }
         else:
-            # Over-budget primary or rolling/flat — just ride at Z2
             step = {
                 "type": "rest",
                 "duration_minutes": dur,
-                "target": _ftp_target(65, 75, ftp),
-                "notes": f"{base_desc} Take it easy — free ride / Z2.",
+                "notes": f"{base_desc} Free ride / Z2 — not part of the structured block.",
                 "segment": seg,
             }
 
@@ -264,7 +331,7 @@ def _build_route_ride(workout_type: str, duration_minutes: int, sport: str, ftp:
     # Remaining km after last segment
     tail_km = dist_km - prev_end_km
     if tail_km > 0.5:
-        tail_min = max(5, round(tail_km / 32 * 60))
+        tail_min = max(5, round(tail_km / _DESCENT_SPEED_KMH * 60))
         intervals.append({
             "type": "rest",
             "duration_minutes": tail_min,
@@ -274,11 +341,10 @@ def _build_route_ride(workout_type: str, duration_minutes: int, sport: str, ftp:
     longer_note = ""
     if estimated_total > duration_minutes + 15:
         longer_note = (
-            f" Note: the full route takes ~{estimated_total} min "
-            f"vs your {duration_minutes}-min plan slot — the extra time is free-riding between efforts."
+            f" Note: full route is ~{estimated_total} min vs your {duration_minutes}-min plan — "
+            "the extra time is free riding outside the structured block."
         )
-
-    cooldown_notes = "Done — free ride / Z2 until you finish." + longer_note
+    cooldown_notes = "Done — free ride / Z2 until you finish the route." + longer_note
 
     session = _make_session(warmup_min, warmup_notes, intervals, 0, cooldown_notes, route)
     session["total_duration_minutes"] = estimated_total
