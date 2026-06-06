@@ -18,6 +18,16 @@ if TYPE_CHECKING:
 
 SYSTEM_PROMPT = "You are a concise endurance sports coach. Be direct and practical. No fluff."
 
+_VALID_MODELS = {"haiku": "claude-haiku-4-5-20251001", "sonnet": "claude-sonnet-4-6"}
+DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+
+
+def resolve_model(model_pref: str | None) -> str:
+    """Map 'haiku'/'sonnet' shorthand to a full model ID."""
+    if not model_pref:
+        return DEFAULT_MODEL
+    return _VALID_MODELS.get(model_pref.lower(), DEFAULT_MODEL)
+
 _client: anthropic.AsyncAnthropic | None = None
 
 
@@ -32,11 +42,9 @@ async def generate_plan_narrative(
     athlete: "Athlete",
     plan_data: dict,
     fitness_context: dict,
+    model_pref: str | None = None,
 ) -> str:
-    """
-    2-3 sentence coaching narrative for the weekly plan.
-    Called once per plan generation.
-    """
+    """2-3 sentence coaching narrative for the weekly plan."""
     if not settings.ANTHROPIC_API_KEY:
         return _fallback_narrative(plan_data, fitness_context)
 
@@ -55,12 +63,43 @@ async def generate_plan_narrative(
     )
 
     response = await _get_client().messages.create(
-        model="claude-haiku-4-5-20251001",
+        model=resolve_model(model_pref),
         max_tokens=200,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
     return response.content[0].text.strip()
+
+
+async def generate_train_now_narrative(
+    athlete: "Athlete",
+    sport: str,
+    workout_type: str,
+    duration_minutes: int,
+    fitness_context: dict,
+    model_pref: str | None = None,
+) -> str:
+    """1-2 sentence coaching intro for an on-demand session."""
+    if not settings.ANTHROPIC_API_KEY:
+        return f"A {workout_type.lower()} {sport.lower()} session chosen to match your current form."
+
+    tsb = fitness_context.get("tsb", 0)
+    ctl = fitness_context.get("ctl", 0)
+    readiness_zone = fitness_context.get("readiness_zone", "")
+
+    prompt = (
+        f"Athlete: {athlete.display_name or 'Alex'}. "
+        f"Fitness (CTL): {ctl:.0f}. Form (TSB): {tsb:.0f}. Readiness: {readiness_zone}. "
+        f"Session: {workout_type} {sport} {duration_minutes}min. "
+        "In 1-2 sentences, explain why this session type fits the athlete right now and what to focus on during it."
+    )
+    resp = await _get_client().messages.create(
+        model=resolve_model(model_pref),
+        max_tokens=120,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return resp.content[0].text.strip()
 
 
 async def score_workout_compliance(
@@ -118,7 +157,7 @@ async def score_workout_compliance(
             "Reply: SCORE: <number> | RATIONALE: <1 sentence>"
         )
         resp = await _get_client().messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=DEFAULT_MODEL,
             max_tokens=100,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],

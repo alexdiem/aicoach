@@ -13,11 +13,12 @@ from app.models.athlete import Athlete
 from app.models.plan import PlannedWorkout, WeeklyPlan
 from app.models.route import Route
 from app.services import ai_coach
-from app.services.fitness import calculate_ctl_atl_tsb, calculate_daily_loads
+from app.services.fitness import calculate_ctl_atl_tsb, calculate_daily_loads, calculate_readiness
 from app.services.fit_export import session_to_fit
 from app.services.plan_generator import generate_weekly_plan_data, VALID_SPORTS
 from app.services.season_detector import detect_season
 from app.services.workout_builder import build_structured_session
+from app.models.wellness import DailyWellness
 
 router = APIRouter(prefix="/plan", tags=["plan"])
 
@@ -59,6 +60,103 @@ class GeneratePlanRequest(BaseModel):
         if v and v not in VALID_PHASES:
             raise ValueError(f"phase_override must be one of {VALID_PHASES}")
         return v
+
+
+def _workout_type_for_tsb(tsb: float, readiness_score: int) -> str:
+    """Pick an appropriate workout intensity based on current form and readiness."""
+    if readiness_score >= 75 and tsb >= 5:
+        return "THRESHOLD"
+    if readiness_score >= 60 and tsb >= -5:
+        return "TEMPO"
+    if readiness_score >= 40:
+        return "EASY"
+    return "RECOVERY"
+
+
+class TrainNowRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    sport: str = Field(..., description="CYCLING, RUNNING, or XC_SKIING")
+    duration_minutes: int | None = Field(None, ge=10, le=360)
+    distance_km: float | None = Field(None, ge=1, le=200)
+    model_pref: str | None = Field(None, description="'haiku' or 'sonnet'")
+
+    @field_validator("sport")
+    @classmethod
+    def validate_sport(cls, v: str) -> str:
+        if v not in VALID_SPORTS:
+            raise ValueError(f"sport must be one of {VALID_SPORTS}")
+        return v
+
+
+@router.post("/train-now")
+async def train_now(
+    body: TrainNowRequest,
+    athlete: Athlete = Depends(get_athlete_or_404),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate an on-demand structured session based on current fitness and readiness."""
+    athlete_id = athlete.id
+
+    cutoff = date.today() - timedelta(days=90)
+    acts_result = await db.execute(
+        select(Activity)
+        .where(Activity.athlete_id == athlete_id, Activity.start_time >= cutoff)
+        .order_by(Activity.start_time)
+    )
+    activities = list(acts_result.scalars().all())
+    daily_loads = calculate_daily_loads(activities, athlete)
+    series = calculate_ctl_atl_tsb(daily_loads)
+    latest = series[-1] if series else {"ctl": 0, "atl": 0, "tsb": 0}
+
+    wellness_result = await db.execute(
+        select(DailyWellness)
+        .where(
+            DailyWellness.athlete_id == athlete_id,
+            DailyWellness.date >= date.today() - timedelta(days=7),
+        )
+        .order_by(DailyWellness.date.desc())
+    )
+    wellness_rows = list(wellness_result.scalars().all())
+    readiness = calculate_readiness(latest["tsb"], wellness_rows)
+
+    # Resolve duration
+    if body.duration_minutes:
+        duration_minutes = body.duration_minutes
+    elif body.distance_km:
+        # rough time estimate by sport
+        speed = {"CYCLING": 28.0, "RUNNING": 10.0, "XC_SKIING": 12.0}.get(body.sport, 20.0)
+        duration_minutes = max(15, round(body.distance_km / speed * 60))
+    else:
+        duration_minutes = 60
+
+    workout_type = _workout_type_for_tsb(latest["tsb"], readiness["score"])
+
+    session = build_structured_session(
+        workout_type=workout_type,
+        duration_minutes=duration_minutes,
+        sport=body.sport,
+        athlete_ftp=athlete.ftp_watts,
+        athlete_lthr=athlete.lthr,
+    )
+
+    narrative = await ai_coach.generate_train_now_narrative(
+        athlete=athlete,
+        sport=body.sport,
+        workout_type=workout_type,
+        duration_minutes=duration_minutes,
+        fitness_context={**latest, "readiness_zone": readiness["zone"]},
+        model_pref=body.model_pref,
+    )
+
+    return {
+        "workout_type": workout_type,
+        "sport": body.sport,
+        "duration_minutes": duration_minutes,
+        "narrative": narrative,
+        "readiness": readiness,
+        "session": session,
+    }
 
 
 @router.post("/generate")

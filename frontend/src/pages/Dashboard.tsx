@@ -5,6 +5,7 @@ import { getAthleteId, getActivities, getFitnessMetrics, getCurrentPlan, markWor
 import FitnessChart from '../components/FitnessChart'
 import ActivityFeed from '../components/ActivityFeed'
 import WorkoutCard from '../components/WorkoutCard'
+import TrainNow from '../components/TrainNow'
 import type { Activity, FitnessMetrics, PlannedWorkout, WeeklyPlan } from '../types'
 
 // ─── Readiness ring ──────────────────────────────────────────────────────────
@@ -241,6 +242,9 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Train Now */}
+      <TrainNow athleteId={athleteId} />
 
       {/* Training load metrics */}
       <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
