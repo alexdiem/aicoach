@@ -34,8 +34,9 @@ export default function RoutesPage() {
     if (!pendingFile || !uploadName.trim()) return
     setUploading(true)
     try {
-      const route = await uploadRoute(athleteId, uploadName.trim(), pendingFile)
-      setRoutes((prev) => [route as unknown as Route, ...prev])
+      await uploadRoute(athleteId, uploadName.trim(), pendingFile)
+      const updated = await getRoutes(athleteId)
+      setRoutes(updated)
       setPendingFile(null)
       setUploadName('')
     } finally {
