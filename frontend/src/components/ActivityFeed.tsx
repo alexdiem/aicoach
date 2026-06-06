@@ -29,7 +29,7 @@ interface Props {
 export default function ActivityFeed({ activities }: Props) {
   if (activities.length === 0) {
     return (
-      <p className="text-zinc-500 text-sm py-4 text-center">
+      <p className="text-sm py-4 text-center" style={{ color: '#8C7B6B' }}>
         No activities yet. Connect Garmin and sync from Settings.
       </p>
     )
@@ -40,23 +40,30 @@ export default function ActivityFeed({ activities }: Props) {
       {activities.map((a, i) => (
         <div
           key={a.id}
-          className={`flex items-center gap-3 py-3 ${i < activities.length - 1 ? 'border-b border-zinc-800' : ''}`}
+          className="flex items-center gap-3 py-3"
+          style={{ borderBottom: i < activities.length - 1 ? '1px solid #332820' : 'none' }}
         >
-          <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center text-base shrink-0">
+          <div
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-base shrink-0"
+            style={{ backgroundColor: 'rgba(51,40,32,0.6)' }}
+          >
             {TYPE_ICONS[a.activity_type] ?? '🏋️'}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-zinc-100 capitalize">
+              <span className="text-sm font-medium capitalize" style={{ color: '#F5F0E8' }}>
                 {a.activity_type.replace('_', ' ').toLowerCase()}
               </span>
               {a.sport_category === 'CASUAL' && (
-                <span className="text-xs text-zinc-500 bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded-full">
+                <span
+                  className="text-xs px-1.5 py-0.5 rounded-full"
+                  style={{ color: '#8C7B6B', backgroundColor: 'rgba(51,40,32,0.6)', border: '1px solid #332820' }}
+                >
                   casual
                 </span>
               )}
             </div>
-            <div className="text-xs text-zinc-500 mt-0.5">
+            <div className="text-xs mt-0.5" style={{ color: '#8C7B6B' }}>
               {format(parseISO(a.start_time), 'EEE d MMM')}
               {' · '}
               {formatDuration(a.duration_seconds)}
@@ -66,13 +73,15 @@ export default function ActivityFeed({ activities }: Props) {
           </div>
           <div className="text-right shrink-0">
             {a.training_stress_score ? (
-              <div className="text-sm font-bold text-blue-400 tabular-nums">
+              <div className="text-sm font-bold tabular-nums" style={{ color: '#F59E0B' }}>
                 {Math.round(a.training_stress_score)}
-                <span className="text-zinc-600 text-xs font-normal ml-0.5">TSS</span>
+                <span className="text-xs font-normal ml-0.5" style={{ color: '#8C7B6B' }}>TSS</span>
               </div>
             ) : null}
             {a.avg_heart_rate ? (
-              <div className="text-xs text-zinc-500 tabular-nums">{Math.round(a.avg_heart_rate)} bpm</div>
+              <div className="text-xs tabular-nums" style={{ color: '#8C7B6B' }}>
+                {Math.round(a.avg_heart_rate)} bpm
+              </div>
             ) : null}
           </div>
         </div>

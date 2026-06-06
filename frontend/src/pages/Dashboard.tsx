@@ -1,47 +1,262 @@
 import { useEffect, useState } from 'react'
-import { TrendingUp, TrendingDown, Minus, ChevronRight, Moon, Heart, Zap, Battery } from 'lucide-react'
-import clsx from 'clsx'
+import { TrendingUp, TrendingDown, Minus, Moon, Heart, Zap, Battery } from 'lucide-react'
 import { getAthleteId, getActivities, getFitnessMetrics, getCurrentPlan, markWorkoutComplete } from '../api/client'
 import FitnessChart from '../components/FitnessChart'
 import ActivityFeed from '../components/ActivityFeed'
-import WorkoutCard from '../components/WorkoutCard'
 import TrainNow from '../components/TrainNow'
 import type { Activity, FitnessMetrics, PlannedWorkout, WeeklyPlan } from '../types'
 
-// ─── Readiness ring ──────────────────────────────────────────────────────────
+// ─── TSS estimation ────────────────────────────────────────────────────────────
 
-function ReadinessRing({ score, zone }: { score: number; zone: string }) {
-  const r = 44
-  const circ = 2 * Math.PI * r
-  const filled = (score / 100) * circ
+const INTENSITY_FACTORS: Record<string, number> = {
+  EASY: 0.6,
+  TEMPO: 0.8,
+  THRESHOLD: 1.0,
+  VO2MAX: 1.1,
+  RECOVERY: 0.5,
+  LONG: 0.65,
+  STRENGTH: 0.5,
+}
 
-  const color =
-    score >= 80 ? '#22c55e'
-    : score >= 60 ? '#3b82f6'
-    : score >= 40 ? '#f59e0b'
-    : score >= 20 ? '#f97316'
-    : '#ef4444'
+function estimateTSS(workout: PlannedWorkout): number {
+  const if_ = INTENSITY_FACTORS[workout.workout_type] ?? 0.7
+  return if_ * (workout.duration_minutes / 60) * 50
+}
+
+function sportColor(sport: string): string {
+  if (sport === 'CYCLING') return '#F59E0B'
+  if (sport === 'RUNNING') return '#38BDF8'
+  if (sport === 'XC_SKIING') return '#93C5FD'
+  return '#8C7B6B'
+}
+
+const SPORT_EMOJI: Record<string, string> = {
+  CYCLING: '🚴',
+  RUNNING: '🏃',
+  XC_SKIING: '⛷️',
+  STRENGTH: '💪',
+}
+
+const TYPE_ABBREV: Record<string, string> = {
+  EASY: 'E',
+  TEMPO: 'T',
+  THRESHOLD: 'TH',
+  VO2MAX: 'V',
+  RECOVERY: 'R',
+  LONG: 'L',
+  STRENGTH: 'S',
+}
+
+const DAY_NAMES = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
+
+// ─── Day Column ────────────────────────────────────────────────────────────────
+
+interface DayColumnProps {
+  dayIndex: number
+  date: Date
+  workout?: PlannedWorkout
+  maxTss: number
+  isToday: boolean
+}
+
+function DayColumn({ dayIndex, date, workout, maxTss, isToday }: DayColumnProps) {
+  const tss = workout ? estimateTSS(workout) : 0
+  const barHeightPct = workout && maxTss > 0 ? Math.max(8, (tss / maxTss) * 100) : 0
+  const color = workout ? sportColor(workout.sport) : '#332820'
 
   return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="relative w-28 h-28">
-        <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r={r} fill="none" stroke="#27272a" strokeWidth="10" />
-          <circle
-            cx="50" cy="50" r={r}
-            fill="none"
-            stroke={color}
-            strokeWidth="10"
-            strokeLinecap="round"
-            strokeDasharray={`${filled} ${circ}`}
+    <div
+      className="flex flex-col items-center gap-1 p-2 rounded-xl cursor-pointer transition-all"
+      style={{
+        border: isToday ? '1px solid rgba(245,158,11,0.4)' : '1px solid transparent',
+        backgroundColor: isToday ? '#2A2010' : 'transparent',
+      }}
+      onMouseEnter={(e) => {
+        if (!isToday) (e.currentTarget as HTMLElement).style.borderColor = '#332820'
+      }}
+      onMouseLeave={(e) => {
+        if (!isToday) (e.currentTarget as HTMLElement).style.borderColor = 'transparent'
+      }}
+    >
+      <span className="text-[10px] uppercase tracking-wider" style={{ color: '#8C7B6B' }}>
+        {DAY_NAMES[dayIndex]}
+      </span>
+      <span className="text-sm font-bold" style={{ color: isToday ? '#F59E0B' : '#F5F0E8' }}>
+        {date.getDate()}
+      </span>
+
+      {/* Bar container */}
+      <div className="w-full h-20 flex flex-col justify-end">
+        {workout ? (
+          <div
+            className="w-full rounded-sm"
+            style={{
+              height: `${barHeightPct}%`,
+              backgroundColor: color,
+              opacity: workout.is_completed ? 0.5 : 1,
+            }}
           />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-bold text-white tabular-nums">{score}</span>
-          <span className="text-[10px] text-zinc-500 uppercase tracking-wide">/ 100</span>
+        ) : (
+          <div className="w-full h-2 rounded" style={{ backgroundColor: '#332820' }} />
+        )}
+      </div>
+
+      {workout && (
+        <span className="text-sm leading-none">{SPORT_EMOJI[workout.sport] ?? '🏋️'}</span>
+      )}
+
+      {workout && (
+        <span
+          className="text-[9px] font-bold uppercase tracking-wide px-1 py-0.5 rounded"
+          style={{ color: '#1A1410', backgroundColor: color }}
+        >
+          {TYPE_ABBREV[workout.workout_type] ?? workout.workout_type.slice(0, 2)}
+        </span>
+      )}
+
+      {workout?.is_completed && (
+        <span className="text-[10px]" style={{ color: '#4ADE80' }}>✓</span>
+      )}
+    </div>
+  )
+}
+
+// ─── Week Grid ─────────────────────────────────────────────────────────────────
+
+function WeekGridWithCtl({ plan, todayDow, ctl }: { plan: WeeklyPlan | null; todayDow: number; ctl: number }) {
+  const now = new Date()
+  const dayOfWeek = (now.getDay() + 6) % 7
+  const monday = new Date(now)
+  monday.setDate(now.getDate() - dayOfWeek)
+
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday)
+    d.setDate(monday.getDate() + i)
+    return d
+  })
+
+  const workoutByDay = new Map<number, PlannedWorkout>()
+  plan?.workouts.forEach((w) => workoutByDay.set(w.day_of_week, w))
+
+  const tssList = plan?.workouts.map(estimateTSS) ?? []
+  const maxTss = tssList.length > 0 ? Math.max(...tssList) : 1
+  const totalTss = Math.round(tssList.reduce((a, b) => a + b, 0))
+
+  const weekLabel = monday
+    .toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+    .toUpperCase()
+
+  return (
+    <div className="rounded-2xl p-5" style={{ backgroundColor: '#221C17', border: '1px solid #332820' }}>
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#8C7B6B' }}>
+          Week of {weekLabel}
+        </span>
+        {plan && (
+          <span
+            className="text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-full"
+            style={{
+              backgroundColor: 'rgba(245,158,11,0.15)',
+              color: '#F59E0B',
+              border: '1px solid rgba(245,158,11,0.3)',
+            }}
+          >
+            {plan.phase} Phase
+          </span>
+        )}
+      </div>
+
+      <div className="relative grid grid-cols-7 gap-2">
+        {days.map((date, i) => (
+          <DayColumn
+            key={i}
+            dayIndex={i}
+            date={date}
+            workout={workoutByDay.get(i)}
+            maxTss={maxTss}
+            isToday={i === todayDow}
+          />
+        ))}
+
+        {!plan && (
+          <div
+            className="absolute inset-0 flex items-center justify-center rounded-xl"
+            style={{ backgroundColor: 'rgba(26,20,16,0.75)' }}
+          >
+            <a href="/plan" className="text-sm font-medium" style={{ color: '#F59E0B' }}>
+              Generate plan to see your week →
+            </a>
+          </div>
+        )}
+      </div>
+
+      {plan && (
+        <div className="mt-4 pt-4" style={{ borderTop: '1px solid #332820' }}>
+          <p className="text-xs" style={{ color: '#8C7B6B' }}>
+            Total load:{' '}
+            <span style={{ color: '#F5F0E8' }}>{totalTss} TSS</span>
+            {ctl > 0 && (
+              <>
+                {' '}· CTL target: ~
+                <span style={{ color: '#F5F0E8' }}>{Math.round(ctl * 7)}</span> TSS/wk
+              </>
+            )}
+          </p>
+        </div>
+      )}
+
+      {plan?.narrative && (
+        <div
+          className="mt-3 rounded-xl p-3"
+          style={{ backgroundColor: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)' }}
+        >
+          <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: '#F59E0B' }}>
+            Coach's Note
+          </p>
+          <p className="text-xs leading-relaxed" style={{ color: '#8C7B6B' }}>{plan.narrative}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Readiness bar ────────────────────────────────────────────────────────────
+
+function ReadinessBar({ score, zone }: { score: number; zone: string }) {
+  const zoneColor =
+    score >= 80 ? '#4ADE80'
+    : score >= 60 ? '#F59E0B'
+    : score >= 40 ? '#FB923C'
+    : '#F87171'
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: '#8C7B6B' }}>
+          Readiness
+        </span>
+        <div className="flex items-baseline gap-2">
+          <span className="text-2xl font-bold tabular-nums" style={{ color: '#F5F0E8' }}>{score}</span>
+          <span className="text-sm font-semibold" style={{ color: zoneColor }}>{zone}</span>
         </div>
       </div>
-      <span className="text-sm font-semibold" style={{ color }}>{zone}</span>
+      <div
+        className="relative h-3 rounded-full overflow-visible mb-1"
+        style={{ background: 'linear-gradient(to right, #F87171, #FB923C, #F59E0B, #4ADE80)' }}
+      >
+        <div
+          className="absolute top-1/2 w-3 h-3 rounded-full border-2 -translate-y-1/2 -translate-x-1/2"
+          style={{
+            left: `${Math.min(100, Math.max(0, score))}%`,
+            borderColor: '#1A1410',
+            backgroundColor: zoneColor,
+          }}
+        />
+      </div>
+      <div className="flex justify-between text-[9px] uppercase tracking-wider mt-2" style={{ color: '#8C7B6B' }}>
+        <span>Low</span>
+        <span>Optimal</span>
+      </div>
     </div>
   )
 }
@@ -61,22 +276,34 @@ function SignalChip({
   sub?: string
   good?: boolean | null
 }) {
+  const iconBg =
+    good === true ? 'rgba(74,222,128,0.1)'
+    : good === false ? 'rgba(248,113,113,0.1)'
+    : 'rgba(140,123,107,0.1)'
+  const iconColor =
+    good === true ? '#4ADE80' : good === false ? '#F87171' : '#8C7B6B'
+
   return (
-    <div className="flex items-center gap-2.5 bg-zinc-800/60 rounded-xl px-3 py-2.5">
-      <div className={clsx('w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
-        good === true ? 'bg-emerald-900/60' : good === false ? 'bg-rose-900/60' : 'bg-zinc-700')}>
-        <Icon size={13} className={good === true ? 'text-emerald-400' : good === false ? 'text-rose-400' : 'text-zinc-400'} />
+    <div
+      className="flex items-center gap-2.5 rounded-xl px-3 py-2.5"
+      style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
+    >
+      <div
+        className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+        style={{ backgroundColor: iconBg }}
+      >
+        <Icon size={13} style={{ color: iconColor }} />
       </div>
       <div className="min-w-0">
-        <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{label}</p>
-        <p className="text-sm font-semibold text-white leading-tight">{value}</p>
-        {sub && <p className="text-[10px] text-zinc-500">{sub}</p>}
+        <p className="text-[10px] uppercase tracking-wider" style={{ color: '#8C7B6B' }}>{label}</p>
+        <p className="text-sm font-semibold leading-tight" style={{ color: '#F5F0E8' }}>{value}</p>
+        {sub && <p className="text-[10px]" style={{ color: '#8C7B6B' }}>{sub}</p>}
       </div>
     </div>
   )
 }
 
-// ─── Training load card ───────────────────────────────────────────────────────
+// ─── Load metric ──────────────────────────────────────────────────────────────
 
 function LoadMetric({
   label,
@@ -90,16 +317,16 @@ function LoadMetric({
   trend?: 'up' | 'down' | 'flat'
 }) {
   const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Minus
-  const trendColor = trend === 'up' ? 'text-emerald-400' : trend === 'down' ? 'text-rose-400' : 'text-zinc-500'
+  const trendColor = trend === 'up' ? '#4ADE80' : trend === 'down' ? '#F87171' : '#8C7B6B'
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1 pb-3" style={{ borderBottom: '2px solid #F59E0B' }}>
       <div className="flex items-center justify-between">
-        <span className="text-xs text-zinc-500 uppercase tracking-wider">{label}</span>
-        {trend && <TrendIcon size={12} className={trendColor} />}
+        <span className="text-[10px] uppercase tracking-wider" style={{ color: '#8C7B6B' }}>{label}</span>
+        {trend && <TrendIcon size={12} style={{ color: trendColor }} />}
       </div>
-      <p className="text-2xl font-bold text-white tabular-nums">{Math.round(value)}</p>
-      <p className="text-xs text-zinc-400 leading-snug">{description}</p>
+      <p className="text-2xl font-bold tabular-nums" style={{ color: '#F5F0E8' }}>{Math.round(value)}</p>
+      <p className="text-xs leading-snug" style={{ color: '#8C7B6B' }}>{description}</p>
     </div>
   )
 }
@@ -122,7 +349,7 @@ function atlContext(atl: number, ctl: number): string {
 }
 
 function ctlContext(ctl: number): string {
-  if (ctl >= 80) return 'High aerobic base — you\'re well prepared for demanding events.'
+  if (ctl >= 80) return "High aerobic base — you're well prepared for demanding events."
   if (ctl >= 55) return 'Solid fitness level for competitive training and events.'
   if (ctl >= 35) return 'Moderate fitness base. Consistent training will build it steadily.'
   if (ctl >= 15) return 'Early-season or returning-athlete range. Room to grow.'
@@ -169,42 +396,41 @@ export default function Dashboard() {
   }
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-zinc-500 text-sm">Loading…</div>
+    return (
+      <div className="flex items-center justify-center h-64 text-sm" style={{ color: '#8C7B6B' }}>
+        Loading…
+      </div>
+    )
   }
 
   const current = fitness?.current ?? { ctl: 0, atl: 0, tsb: 0 }
   const readiness = fitness?.readiness
   const signals = readiness?.signals ?? {}
 
+  // suppress unused warning — handleMarkComplete is available for future use in day column click
+  void handleMarkComplete
+
   return (
     <div className="flex flex-col gap-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-white">Dashboard</h1>
-          <p className="text-sm text-zinc-500 mt-0.5">
-            {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </p>
-        </div>
-        {fitness && (
-          <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-full px-3 py-1.5 text-xs">
-            <span className="text-zinc-400">{fitness.season === 'SKI' ? '⛷️' : '🚴'}</span>
-            <span className="text-zinc-300 font-medium">
-              {fitness.season === 'SKI' ? 'Ski season' : 'Road season'}
-            </span>
-          </div>
-        )}
-      </div>
 
-      {/* Readiness + signals */}
-      {readiness && (
-        <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Today's Readiness</p>
-          <div className="flex gap-6 items-start">
-            <ReadinessRing score={readiness.score} zone={readiness.zone} />
-            <div className="flex-1 flex flex-col gap-3">
-              <p className="text-sm text-zinc-300 leading-relaxed">{readiness.guidance}</p>
-              <div className="grid grid-cols-2 gap-2">
+      {/* ── Section 1: Week Grid Hero ── */}
+      <WeekGridWithCtl plan={plan} todayDow={todayDow} ctl={current.ctl} />
+
+      {/* ── Section 2: Two-column ── */}
+      <div className="grid grid-cols-5 gap-6">
+
+        {/* Left col-span-3: Readiness + Training load */}
+        <div className="col-span-3 flex flex-col gap-5">
+
+          {readiness && (
+            <div className="rounded-2xl p-5" style={{ backgroundColor: '#221C17', border: '1px solid #332820' }}>
+              <ReadinessBar score={readiness.score} zone={readiness.zone} />
+              {readiness.guidance && (
+                <p className="text-xs leading-relaxed mt-3" style={{ color: '#8C7B6B' }}>
+                  {readiness.guidance}
+                </p>
+              )}
+              <div className="grid grid-cols-2 gap-2 mt-4">
                 {signals.body_battery != null && (
                   <SignalChip
                     icon={Battery}
@@ -218,7 +444,13 @@ export default function Dashboard() {
                     icon={Heart}
                     label="HRV status"
                     value={signals.hrv_status}
-                    good={signals.hrv_status.toLowerCase() === 'balanced' ? true : signals.hrv_status.toLowerCase() === 'low' ? false : null}
+                    good={
+                      signals.hrv_status.toLowerCase() === 'balanced'
+                        ? true
+                        : signals.hrv_status.toLowerCase() === 'low'
+                          ? false
+                          : null
+                    }
                   />
                 )}
                 {signals.sleep_score != null && (
@@ -239,94 +471,52 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
+          )}
+
+          <div className="rounded-2xl p-5" style={{ backgroundColor: '#221C17', border: '1px solid #332820' }}>
+            <p className="text-[10px] font-semibold uppercase tracking-wider mb-4" style={{ color: '#8C7B6B' }}>
+              Training Load
+            </p>
+            <div className="grid grid-cols-3 gap-6">
+              <LoadMetric
+                label="CTL — Fitness"
+                value={current.ctl}
+                description={ctlContext(current.ctl)}
+                trend={ctlTrend(fitness?.series)}
+              />
+              <LoadMetric
+                label="ATL — Fatigue"
+                value={current.atl}
+                description={atlContext(current.atl, current.ctl)}
+                trend={current.atl > current.ctl * 1.15 ? 'up' : current.atl < current.ctl * 0.8 ? 'down' : 'flat'}
+              />
+              <LoadMetric
+                label="TSB — Form"
+                value={current.tsb}
+                description={tsbContext(current.tsb)}
+                trend={current.tsb >= 0 ? 'up' : 'down'}
+              />
+            </div>
           </div>
         </div>
-      )}
 
-      {/* Train Now */}
-      <TrainNow athleteId={athleteId} />
-
-      {/* Training load metrics */}
-      <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Training Load</p>
-        <div className="grid grid-cols-3 gap-6 divide-x divide-zinc-800">
-          <LoadMetric
-            label="CTL — Fitness"
-            value={current.ctl}
-            description={ctlContext(current.ctl)}
-            trend={ctlTrend(fitness?.series)}
-          />
-          <div className="pl-6">
-            <LoadMetric
-              label="ATL — Fatigue"
-              value={current.atl}
-              description={atlContext(current.atl, current.ctl)}
-              trend={current.atl > current.ctl * 1.15 ? 'up' : current.atl < current.ctl * 0.8 ? 'down' : 'flat'}
-            />
-          </div>
-          <div className="pl-6">
-            <LoadMetric
-              label="TSB — Form"
-              value={current.tsb}
-              description={tsbContext(current.tsb)}
-              trend={current.tsb >= 0 ? 'up' : 'down'}
-            />
-          </div>
+        {/* Right col-span-2: Train Now */}
+        <div className="col-span-2">
+          <TrainNow athleteId={athleteId} />
         </div>
       </div>
 
-      {/* 90-day chart */}
+      {/* ── Section 3: 90-day chart ── */}
       {fitness && fitness.series.length > 0 && (
-        <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-          <h2 className="text-sm font-semibold text-zinc-300 mb-5">90-Day Training Load</h2>
+        <div className="rounded-2xl p-5" style={{ backgroundColor: '#221C17', border: '1px solid #332820' }}>
+          <h2 className="text-sm font-semibold mb-5" style={{ color: '#F5F0E8' }}>90-Day Training Load</h2>
           <FitnessChart data={fitness.series} />
         </div>
       )}
 
-      {/* This week's plan */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-zinc-300">This Week</h2>
-          <a
-            href="/plan"
-            className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-          >
-            Full plan <ChevronRight size={12} />
-          </a>
-        </div>
-        {plan ? (
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {plan.workouts.map((w) => (
-              <WorkoutCard
-                key={w.id}
-                workout={w}
-                isToday={w.day_of_week === todayDow}
-                onMarkComplete={handleMarkComplete}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="bg-zinc-900 rounded-2xl p-8 border border-zinc-800 text-center">
-            <p className="text-zinc-500 text-sm mb-3">No plan for this week yet.</p>
-            <a
-              href="/plan"
-              className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300 text-sm font-medium transition-colors"
-            >
-              Generate this week's plan <ChevronRight size={14} />
-            </a>
-          </div>
-        )}
-        {plan?.narrative && (
-          <div className="mt-3 bg-zinc-900 rounded-2xl p-4 border border-blue-900/50">
-            <p className="text-xs text-blue-400 font-semibold uppercase tracking-wider mb-1.5">Coach's Note</p>
-            <p className="text-sm text-zinc-300 leading-relaxed">{plan.narrative}</p>
-          </div>
-        )}
-      </div>
-
-      {/* Recent activity */}
-      <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-        <h2 className="text-sm font-semibold text-zinc-300 mb-4">Recent Activities</h2>
+      {/* ── Activity feed ── */}
+      <div className="rounded-2xl p-5" style={{ backgroundColor: '#221C17', border: '1px solid #332820' }}>
+        <h2 className="text-sm font-semibold mb-4" style={{ color: '#F5F0E8' }}>Recent Activities</h2>
         <ActivityFeed activities={activities} />
       </div>
     </div>
