@@ -20,10 +20,15 @@ export default function Layout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen flex bg-zinc-950">
-      <nav className="w-52 shrink-0 bg-zinc-900 border-r border-zinc-800 flex flex-col p-3">
+    <div className="min-h-screen flex" style={{ backgroundColor: '#0A0A12' }}>
+      <nav
+        className="w-52 shrink-0 flex flex-col p-3"
+        style={{ backgroundColor: '#0A0A12', borderRight: '1px solid #1E1E35' }}
+      >
         <div className="px-3 py-4 mb-2">
-          <span className="text-lg font-bold tracking-tight text-white">ai<span className="text-blue-400">coach</span></span>
+          <span className="text-lg font-bold tracking-tight text-white">
+            ai<span style={{ color: '#A78BFA' }}>coach</span>
+          </span>
         </div>
         <div className="flex flex-col gap-0.5">
           {nav.map(({ to, label, icon: Icon }) => (
@@ -35,23 +40,33 @@ export default function Layout({ children }: { children: ReactNode }) {
                 clsx(
                   'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all',
                   isActive
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800',
+                    ? 'bg-violet-600 text-white shadow-sm'
+                    : 'hover:text-white',
                 )
               }
+              style={({ isActive }) =>
+                isActive ? {} : { color: '#6B6B8A' }
+              }
             >
-              <Icon size={16} strokeWidth={1.75} />
-              {label}
+              {({ isActive }) => (
+                <>
+                  <Icon size={16} strokeWidth={1.75} />
+                  {label}
+                </>
+              )}
             </NavLink>
           ))}
         </div>
 
         {/* Model selector */}
-        <div className="mt-auto pt-4 border-t border-zinc-800">
-          <div className="px-1 mb-1.5 flex items-center gap-1.5 text-[10px] text-zinc-600 uppercase tracking-wider">
+        <div className="mt-auto pt-4" style={{ borderTop: '1px solid #1E1E35' }}>
+          <div className="px-1 mb-1.5 flex items-center gap-1.5 text-[10px] uppercase tracking-wider" style={{ color: '#6B6B8A' }}>
             <Bot size={10} /> AI Model
           </div>
-          <div className="flex rounded-lg overflow-hidden border border-zinc-700 text-xs font-medium">
+          <div
+            className="flex rounded-lg overflow-hidden text-xs font-medium"
+            style={{ border: '1px solid #1E1E35' }}
+          >
             {(['haiku', 'sonnet'] as ModelPref[]).map((m) => (
               <button
                 key={m}
@@ -59,15 +74,16 @@ export default function Layout({ children }: { children: ReactNode }) {
                 className={clsx(
                   'flex-1 py-1.5 transition-colors capitalize',
                   model === m
-                    ? 'bg-zinc-700 text-white'
-                    : 'text-zinc-500 hover:text-zinc-300',
+                    ? 'bg-violet-600 text-white'
+                    : 'hover:text-white',
                 )}
+                style={model === m ? {} : { color: '#6B6B8A' }}
               >
                 {m}
               </button>
             ))}
           </div>
-          <p className="mt-1.5 px-1 text-[10px] text-zinc-600 leading-snug">
+          <p className="mt-1.5 px-1 text-[10px] leading-snug" style={{ color: '#6B6B8A' }}>
             {model === 'haiku' ? 'Fast · lower cost' : 'Smarter · higher cost'}
           </p>
         </div>
