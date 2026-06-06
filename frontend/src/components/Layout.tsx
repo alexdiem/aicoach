@@ -20,12 +20,15 @@ export default function Layout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen flex bg-zinc-950">
-      <nav className="w-52 shrink-0 bg-zinc-900 border-r border-zinc-800 flex flex-col p-3">
-        <div className="px-3 py-4 mb-2">
-          <span className="text-lg font-bold tracking-tight text-white">ai<span className="text-blue-400">coach</span></span>
-        </div>
-        <div className="flex flex-col gap-0.5">
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#0A0A0F' }}>
+      <header className="h-12 flex items-center px-6 border-b border-zinc-800 sticky top-0 z-10" style={{ backgroundColor: '#0A0A0F' }}>
+        {/* Logo */}
+        <span className="text-base font-bold tracking-tight text-white shrink-0">
+          ai<span style={{ color: '#F59E0B' }}>coach</span>
+        </span>
+
+        {/* Nav — centered */}
+        <nav className="flex-1 flex items-center justify-center gap-1">
           {nav.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
@@ -33,31 +36,29 @@ export default function Layout({ children }: { children: ReactNode }) {
               end={to === '/'}
               className={({ isActive }) =>
                 clsx(
-                  'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all',
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all',
                   isActive
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800',
+                    ? 'text-white bg-zinc-800'
+                    : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/50',
                 )
               }
             >
-              <Icon size={16} strokeWidth={1.75} />
+              <Icon size={13} strokeWidth={1.75} />
               {label}
             </NavLink>
           ))}
-        </div>
+        </nav>
 
-        {/* Model selector */}
-        <div className="mt-auto pt-4 border-t border-zinc-800">
-          <div className="px-1 mb-1.5 flex items-center gap-1.5 text-[10px] text-zinc-600 uppercase tracking-wider">
-            <Bot size={10} /> AI Model
-          </div>
-          <div className="flex rounded-lg overflow-hidden border border-zinc-700 text-xs font-medium">
+        {/* Model selector — right */}
+        <div className="flex items-center gap-2 shrink-0">
+          <Bot size={11} className="text-zinc-600" />
+          <div className="flex rounded overflow-hidden border border-zinc-700 text-[11px] font-medium">
             {(['haiku', 'sonnet'] as ModelPref[]).map((m) => (
               <button
                 key={m}
                 onClick={() => toggleModel(m)}
                 className={clsx(
-                  'flex-1 py-1.5 transition-colors capitalize',
+                  'px-2.5 py-1 transition-colors capitalize',
                   model === m
                     ? 'bg-zinc-700 text-white'
                     : 'text-zinc-500 hover:text-zinc-300',
@@ -67,13 +68,11 @@ export default function Layout({ children }: { children: ReactNode }) {
               </button>
             ))}
           </div>
-          <p className="mt-1.5 px-1 text-[10px] text-zinc-600 leading-snug">
-            {model === 'haiku' ? 'Fast · lower cost' : 'Smarter · higher cost'}
-          </p>
         </div>
-      </nav>
+      </header>
+
       <main className="flex-1 overflow-auto">
-        <div className="max-w-6xl mx-auto px-6 py-8">{children}</div>
+        <div className="max-w-5xl mx-auto px-6 py-8">{children}</div>
       </main>
     </div>
   )

@@ -36,44 +36,48 @@ export default function WorkoutCard({ workout, isToday, onMarkComplete }: Props)
   return (
     <div
       className={clsx(
-        'rounded-2xl p-4 border flex flex-col gap-3 min-w-[156px] max-w-[180px] transition-all',
+        'rounded-xl p-4 border flex flex-col gap-3 min-w-[156px] max-w-[180px] transition-all',
         isToday
-          ? 'bg-zinc-900 border-blue-500/60 shadow-[0_0_0_1px_rgba(59,130,246,0.15)]'
-          : 'bg-zinc-900 border-zinc-800',
+          ? 'border-amber-500/40'
+          : 'border-zinc-800',
         workout.is_completed && 'opacity-50',
       )}
+      style={{ backgroundColor: '#12121A' }}
     >
       <div className="flex items-center justify-between">
-        <span className={clsx('text-xs font-semibold uppercase tracking-wider', isToday ? 'text-blue-400' : 'text-zinc-500')}>
+        <span
+          className="text-xs font-semibold uppercase tracking-wider"
+          style={{ color: isToday ? '#F59E0B' : '#52525b' }}
+        >
           {isToday ? 'Today' : dayLabel}
         </span>
         {workout.is_completed && (
-          <span className="text-emerald-400 text-xs font-semibold">✓ Done</span>
+          <span className="text-emerald-400 text-xs font-semibold">✓</span>
         )}
       </div>
 
       <div className="flex items-center gap-2.5">
         <span className="text-2xl leading-none">{icon}</span>
         <div className="flex flex-col gap-1">
-          <span className={clsx('text-xs px-2 py-0.5 rounded-full border font-medium', style.badge)}>
+          <span className={clsx('text-xs px-2 py-0.5 rounded border font-medium', style.badge)}>
             {workout.workout_type}
           </span>
         </div>
       </div>
 
       <div>
-        <p className="text-sm font-bold text-white">
+        <p className="text-sm font-bold text-white tabular-nums" style={{ fontFamily: 'monospace' }}>
           {workout.duration_minutes}
-          <span className="text-zinc-400 font-normal text-xs ml-1">min</span>
+          <span className="text-zinc-500 font-normal text-xs ml-1">min</span>
           {workout.intensity_zone && (
-            <span className="text-zinc-500 font-normal text-xs ml-1.5">{workout.intensity_zone}</span>
+            <span className="text-zinc-600 font-normal text-xs ml-1.5">{workout.intensity_zone}</span>
           )}
         </p>
         <p className="text-xs text-zinc-500 mt-1 line-clamp-2 leading-relaxed">{workout.purpose}</p>
       </div>
 
       {workout.terrain_notes && (
-        <p className="text-xs text-amber-400/80 line-clamp-1">⛰ {workout.terrain_notes.slice(0, 60)}</p>
+        <p className="text-xs line-clamp-1" style={{ color: '#F59E0B99' }}>⛰ {workout.terrain_notes.slice(0, 60)}</p>
       )}
 
       {workout.compliance_score !== null && (
@@ -98,7 +102,8 @@ export default function WorkoutCard({ workout, isToday, onMarkComplete }: Props)
       {!workout.is_completed && onMarkComplete && (
         <button
           onClick={() => onMarkComplete(workout)}
-          className="text-xs text-blue-400 hover:text-blue-300 transition-colors font-medium text-left"
+          className="text-xs transition-colors font-medium text-left"
+          style={{ color: '#F59E0B' }}
         >
           Mark complete →
         </button>
