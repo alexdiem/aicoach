@@ -26,3 +26,4 @@ frontend/.env
 .DS_Store
 *.swp
 frontend/package-lock.json
+.claude/
