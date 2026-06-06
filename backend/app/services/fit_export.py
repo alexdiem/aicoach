@@ -84,27 +84,17 @@ _TARGET_POWER      = 4
 _SPORT = {"CYCLING": 2, "RUNNING": 1, "XC_SKIING": 11}
 
 
-def _parse_watts(target: str | None) -> tuple[int | None, int | None]:
-    """Extract (low_watts, high_watts) from a target string like '266–294 W (95–105% FTP)'."""
+def _parse_numeric_range(target: str | None, unit: str) -> tuple[int | None, int | None]:
+    """Extract (low, high) integers for a given unit suffix (e.g. 'W' or 'bpm')."""
     if not target:
         return None, None
-    m = re.search(r"(\d+)\s*[–\-]\s*(\d+)\s*W", target)
+    m = re.search(rf"(\d+)\s*[–\-]\s*(\d+)\s*{unit}", target)
     if m:
         return int(m.group(1)), int(m.group(2))
-    m = re.search(r"(\d+)\s*W", target)
+    m = re.search(rf"(\d+)\s*{unit}", target)
     if m:
-        w = int(m.group(1))
-        return w, w
-    return None, None
-
-
-def _parse_bpm(target: str | None) -> tuple[int | None, int | None]:
-    """Extract (low_bpm, high_bpm) from a target string like '145–162 bpm (Z4)'."""
-    if not target:
-        return None, None
-    m = re.search(r"(\d+)\s*[–\-]\s*(\d+)\s*bpm", target)
-    if m:
-        return int(m.group(1)), int(m.group(2))
+        v = int(m.group(1))
+        return v, v
     return None, None
 
 
@@ -121,11 +111,11 @@ def _encode_step(step: dict, intensity: int) -> tuple[int, int, int, int]:
         return _TARGET_OPEN, _INVALID_UINT32, _INVALID_UINT32, duration_ms
 
     target = step.get("target", "")
-    pwr_lo, pwr_hi = _parse_watts(target)
+    pwr_lo, pwr_hi = _parse_numeric_range(target, "W")
     if pwr_lo is not None:
         return _TARGET_POWER, pwr_lo + 1, pwr_hi + 1, duration_ms
 
-    hr_lo, hr_hi = _parse_bpm(target)
+    hr_lo, hr_hi = _parse_numeric_range(target, "bpm")
     if hr_lo is not None:
         return _TARGET_HEART_RATE, hr_lo + 1, hr_hi + 1, duration_ms
 
