@@ -106,3 +106,16 @@ export async function uploadRoute(athleteId: number, name: string, file: File): 
 export async function deleteRoute(routeId: number, athleteId: number): Promise<void> {
   await api.delete(`/routes/${routeId}`, { params: { athlete_id: athleteId } })
 }
+
+export async function downloadWorkoutFit(workoutId: number, athleteId: number, filename: string): Promise<void> {
+  const r = await api.get(`/plan/workouts/${workoutId}/fit`, {
+    params: { athlete_id: athleteId },
+    responseType: 'blob',
+  })
+  const url = URL.createObjectURL(new Blob([r.data], { type: 'application/octet-stream' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}

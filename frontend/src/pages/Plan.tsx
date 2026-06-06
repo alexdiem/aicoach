@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { RefreshCw, CalendarDays, ChevronDown, ChevronRight } from 'lucide-react'
+import { RefreshCw, CalendarDays, ChevronDown, ChevronRight, Download } from 'lucide-react'
 import clsx from 'clsx'
 import {
   getAthleteId,
@@ -8,6 +8,7 @@ import {
   markWorkoutComplete,
   setWorkoutUnstructured,
   buildWorkoutStructure,
+  downloadWorkoutFit,
   getRoutes,
 } from '../api/client'
 import SchedulePicker, { toApiSchedule } from '../components/SchedulePicker'
@@ -83,6 +84,7 @@ function SessionPlan({
   workoutId,
   athleteId,
   sport,
+  workoutType,
   routes,
   onRebuild,
 }: {
@@ -90,6 +92,7 @@ function SessionPlan({
   workoutId: number
   athleteId: number
   sport: string
+  workoutType: string
   routes: Route[]
   onRebuild: (session: StructuredSession) => void
 }) {
@@ -97,6 +100,7 @@ function SessionPlan({
     session.route_id ? String(session.route_id) : ''
   )
   const [rebuilding, setRebuilding] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const [rebuildError, setRebuildError] = useState<string | null>(null)
 
   async function handleApplyRoute() {
@@ -113,6 +117,16 @@ function SessionPlan({
       setRebuildError(e instanceof Error ? e.message : 'Failed to apply route')
     } finally {
       setRebuilding(false)
+    }
+  }
+
+  async function handleDownloadFit() {
+    setDownloading(true)
+    try {
+      const filename = `workout_${workoutType}_${sport}.fit`.toLowerCase().replace(/\s+/g, '_')
+      await downloadWorkoutFit(workoutId, athleteId, filename)
+    } finally {
+      setDownloading(false)
     }
   }
 
@@ -152,6 +166,18 @@ function SessionPlan({
       {rebuildError && (
         <p className="text-xs text-red-400 mb-3">{rebuildError}</p>
       )}
+
+      {/* Garmin download */}
+      <div className="mb-4 flex">
+        <button
+          onClick={handleDownloadFit}
+          disabled={downloading}
+          className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 border border-emerald-900/60 hover:border-emerald-700 px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-50"
+        >
+          <Download size={11} className={downloading ? 'animate-bounce' : ''} />
+          {downloading ? 'Generating…' : 'Download for Garmin (.fit)'}
+        </button>
+      </div>
 
       {/* Route summary */}
       {session.route_summary && (
@@ -521,6 +547,7 @@ export default function Plan() {
                           workoutId={w.id}
                           athleteId={athleteId}
                           sport={w.sport}
+                          workoutType={w.workout_type}
                           routes={routes}
                           onRebuild={(s) => handleSessionRebuild(w.id, s)}
                         />

@@ -87,12 +87,28 @@ def _estimate_route_time_min(dist_km: float, gain_m: float) -> int:
     return max(30, round(flat_min + climb_min))
 
 
+def _merge_consecutive_rests(intervals: list[dict]) -> list[dict]:
+    """Collapse adjacent REST steps into a single step."""
+    merged: list[dict] = []
+    for step in intervals:
+        if merged and step["type"] == "rest" and merged[-1]["type"] == "rest":
+            prev = merged[-1]
+            prev["duration_minutes"] += step["duration_minutes"]
+            # Keep notes from whichever is more informative (longest)
+            if len(step.get("notes", "")) > len(prev.get("notes", "")):
+                prev["notes"] = step["notes"]
+        else:
+            merged.append(dict(step))
+    return merged
+
+
 def _make_session(warmup_min, warmup_notes, intervals, cooldown_min, cooldown_notes, route):
-    total = warmup_min + sum(i["duration_minutes"] for i in intervals) + cooldown_min
+    merged = _merge_consecutive_rests(intervals)
+    total = warmup_min + sum(i["duration_minutes"] for i in merged) + cooldown_min
     return {
         "warmup_minutes": warmup_min,
         "warmup_notes": warmup_notes,
-        "intervals": intervals,
+        "intervals": merged,
         "cooldown_minutes": cooldown_min,
         "cooldown_notes": cooldown_notes,
         "route_id": route.id if route else None,

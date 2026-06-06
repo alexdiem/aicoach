@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +14,7 @@ from app.models.plan import PlannedWorkout, WeeklyPlan
 from app.models.route import Route
 from app.services import ai_coach
 from app.services.fitness import calculate_ctl_atl_tsb, calculate_daily_loads
+from app.services.fit_export import session_to_fit
 from app.services.plan_generator import generate_weekly_plan_data, VALID_SPORTS
 from app.services.season_detector import detect_season
 from app.services.workout_builder import build_structured_session
@@ -257,6 +259,38 @@ async def set_workout_unstructured(
         raise HTTPException(status_code=404, detail="Workout not found.")
     workout.is_unstructured = is_unstructured
     return {"workout_id": workout_id, "is_unstructured": is_unstructured}
+
+
+@router.get("/workouts/{workout_id}/fit")
+async def download_workout_fit(
+    workout_id: int,
+    athlete: Athlete = Depends(get_athlete_or_404),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download a Garmin FIT workout file for the given planned workout."""
+    result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
+    workout = result.scalar_one_or_none()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found.")
+    if not workout.structured_session:
+        raise HTTPException(status_code=422, detail="Workout has no structured session.")
+
+    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    day = day_names[workout.day_of_week] if workout.day_of_week is not None else "Day"
+    name = f"{day} {workout.workout_type} {workout.sport}".replace("_", " ").title()[:15]
+
+    fit_bytes = session_to_fit(
+        session=workout.structured_session,
+        workout_name=name,
+        sport=workout.sport,
+    )
+
+    filename = f"workout_{workout_id}_{workout.sport.lower()}.fit"
+    return Response(
+        content=fit_bytes,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 async def _serialize_plan(plan: WeeklyPlan, db: AsyncSession) -> dict:
