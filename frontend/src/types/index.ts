@@ -87,6 +87,11 @@ export interface StructuredSession {
   route_id: number | null
   route_name: string | null
   total_duration_minutes: number
+  route_summary?: {
+    distance_km: number
+    elevation_gain_m: number
+    estimated_minutes: number
+  } | null
 }
 
 export interface PlannedWorkout {

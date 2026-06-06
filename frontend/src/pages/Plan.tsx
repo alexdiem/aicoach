@@ -146,6 +146,17 @@ function SessionPlan({
         </div>
       )}
 
+      {/* Route summary */}
+      {session.route_summary && (
+        <div className="flex items-center gap-3 mb-4 text-xs text-zinc-400 bg-zinc-800/60 rounded-xl px-3 py-2 flex-wrap">
+          <span>🗺 {session.route_summary.distance_km} km</span>
+          <span className="text-zinc-600">·</span>
+          <span>↑ {session.route_summary.elevation_gain_m} m</span>
+          <span className="text-zinc-600">·</span>
+          <span>≈ {Math.floor(session.route_summary.estimated_minutes / 60)}h{session.route_summary.estimated_minutes % 60 > 0 ? ` ${session.route_summary.estimated_minutes % 60}min` : ''}</span>
+        </div>
+      )}
+
       {/* Warmup */}
       {session.warmup_minutes > 0 && (
         <div className="flex gap-3 mb-1">
