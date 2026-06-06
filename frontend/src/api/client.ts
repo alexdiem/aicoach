@@ -58,10 +58,11 @@ export interface DayPreference {
 export async function generatePlan(
   athleteId: number,
   schedule: DayPreference[] = [],
+  phaseOverride: string | null = null,
 ): Promise<{ plan_id: number; narrative: string }> {
   const r = await api.post(
     '/plan/generate',
-    { athlete_schedule: schedule, fun_activities: [] },
+    { athlete_schedule: schedule, fun_activities: [], phase_override: phaseOverride },
     { params: { athlete_id: athleteId } },
   )
   return r.data

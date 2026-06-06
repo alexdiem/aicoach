@@ -31,6 +31,7 @@ export default function Plan() {
   const [error, setError] = useState<string | null>(null)
   const [showScheduler, setShowScheduler] = useState(false)
   const [schedule, setSchedule] = useState(makeEmptySchedule())
+  const [phaseOverride, setPhaseOverride] = useState<string>('AUTO')
 
   useEffect(() => {
     getCurrentPlan(athleteId)
@@ -43,7 +44,7 @@ export default function Plan() {
     setError(null)
     try {
       const apiSchedule = toApiSchedule(schedule)
-      await generatePlan(athleteId, apiSchedule)
+      await generatePlan(athleteId, apiSchedule, phaseOverride === 'AUTO' ? null : phaseOverride)
       const updated = await getCurrentPlan(athleteId)
       setPlan(updated)
       setShowScheduler(false)
@@ -93,6 +94,46 @@ export default function Plan() {
             Tell the planner what you want to do on specific days. The plan will respect rest days,
             use your preferred sport, and fill remaining days automatically.
           </p>
+
+          {/* Phase selector */}
+          <div className="mb-5">
+            <label className="text-xs font-semibold text-gray-400 uppercase mb-2 block">
+              Training phase
+            </label>
+            <div className="flex gap-2 flex-wrap">
+              {[
+                { value: 'AUTO',     label: 'Auto-detect',  desc: 'Based on CTL, TSB, and 4-week block',       color: 'border-gray-600 text-gray-400' },
+                { value: 'BASE',     label: 'Base',         desc: 'High volume, low intensity. Build the engine.', color: 'border-blue-600 text-blue-300' },
+                { value: 'BUILD',    label: 'Build',        desc: 'Rising intensity. VO2max and threshold work.',  color: 'border-orange-600 text-orange-300' },
+                { value: 'PEAK',     label: 'Peak',         desc: 'Max quality. Sharpening before target period.', color: 'border-red-600 text-red-300' },
+                { value: 'RECOVERY', label: 'Recovery',     desc: 'Reduced load. Let adaptations consolidate.',   color: 'border-green-600 text-green-300' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setPhaseOverride(opt.value)}
+                  title={opt.desc}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
+                    phaseOverride === opt.value
+                      ? `${opt.color} bg-gray-800`
+                      : 'border-gray-700 text-gray-600 hover:border-gray-500 hover:text-gray-400'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {phaseOverride !== 'AUTO' && (
+              <p className="text-xs text-gray-600 mt-1.5">
+                {[
+                  { value: 'BASE',     desc: 'High volume, low intensity. Build the engine.' },
+                  { value: 'BUILD',    desc: 'Rising intensity. VO2max and threshold work.' },
+                  { value: 'PEAK',     desc: 'Max quality. Sharpening before target period.' },
+                  { value: 'RECOVERY', desc: 'Reduced load. Let adaptations consolidate.' },
+                ].find((o) => o.value === phaseOverride)?.desc}
+              </p>
+            )}
+          </div>
+
           <SchedulePicker schedule={schedule} onChange={setSchedule} />
           <div className="flex items-center gap-3 mt-5">
             <button
@@ -112,9 +153,9 @@ export default function Plan() {
         </div>
       )}
 
-      {/* Generate button when scheduler is hidden */}
+      {/* Generate button + quick phase picker when scheduler is hidden */}
       {!showScheduler && (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button
             onClick={handleGenerate}
             disabled={generating}
@@ -122,8 +163,22 @@ export default function Plan() {
           >
             {generating ? 'Generating…' : plan ? 'Regenerate plan' : 'Generate plan'}
           </button>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-600">Phase:</span>
+            <select
+              value={phaseOverride}
+              onChange={(e) => setPhaseOverride(e.target.value)}
+              className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="AUTO">Auto-detect</option>
+              <option value="BASE">Base</option>
+              <option value="BUILD">Build</option>
+              <option value="PEAK">Peak</option>
+              <option value="RECOVERY">Recovery</option>
+            </select>
+          </div>
           <span className="text-xs text-gray-600">
-            or use <span className="text-gray-400">📅 Set my schedule</span> to specify days first
+            or use <span className="text-gray-400">📅 Set my schedule</span> to specify days
           </span>
         </div>
       )}

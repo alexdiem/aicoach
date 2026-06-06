@@ -31,12 +31,24 @@ class DayPreference(BaseModel):
             raise ValueError(f"preferred_sport must be one of {VALID_SPORTS}")
 
 
+VALID_PHASES = {"BASE", "BUILD", "PEAK", "RECOVERY"}
+
+
 class GeneratePlanRequest(BaseModel):
     athlete_schedule: list[DayPreference] = Field(
         default_factory=list,
         description="Per-day constraints. Omit days you have no preference for.",
     )
     fun_activities: list[dict] = Field(default_factory=list)
+    phase_override: str | None = Field(
+        None,
+        description="Force a specific training phase: BASE, BUILD, PEAK, or RECOVERY. "
+                    "If omitted the phase is auto-detected from CTL, TSB, and the 4-week block.",
+    )
+
+    def model_post_init(self, __context) -> None:
+        if self.phase_override and self.phase_override not in VALID_PHASES:
+            raise ValueError(f"phase_override must be one of {VALID_PHASES}")
 
 
 async def _get_athlete_or_404(athlete_id: int, db: AsyncSession) -> Athlete:
@@ -86,6 +98,7 @@ async def generate_plan(
         fun_activities_next_week=body.fun_activities,
         available_routes=routes,
         athlete_schedule=schedule,
+        phase_override=body.phase_override,
     )
 
     narrative = await ai_coach.generate_plan_narrative(

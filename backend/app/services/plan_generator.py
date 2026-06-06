@@ -298,13 +298,15 @@ def generate_weekly_plan_data(
     fun_activities_next_week: list[dict],
     available_routes: list["Route"],
     athlete_schedule: list[dict] | None = None,
+    phase_override: str | None = None,
 ) -> dict:
     """
     Generate a weekly plan. Returns a dict ready to create WeeklyPlan + PlannedWorkout records.
 
     athlete_schedule: list of {day_of_week: int, is_rest: bool, preferred_sport: str|None}
+    phase_override: if set, skip auto-detection and use this phase directly.
     """
-    phase = _detect_phase(ctl, tsb, _week_in_block())
+    phase = phase_override if phase_override else _detect_phase(ctl, tsb, _week_in_block())
     week_start = _monday_of_week()
 
     templates = WORKOUT_TEMPLATES.get(season, WORKOUT_TEMPLATES["CYCLING_RUNNING"])
