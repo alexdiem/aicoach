@@ -29,9 +29,35 @@ export interface FitnessPoint {
   tss: number
 }
 
+export interface Readiness {
+  score: number
+  zone: string
+  guidance: string
+  signals: {
+    body_battery?: number
+    hrv_status?: string
+    sleep_score?: number
+    sleep_hours?: number
+    resting_hr?: number
+  }
+}
+
+export interface DailyWellness {
+  date: string
+  body_battery_max: number | null
+  hrv_status: string | null
+  hrv_last_night_avg: number | null
+  sleep_score: number | null
+  sleep_hours: number | null
+  resting_hr: number | null
+  avg_stress: number | null
+}
+
 export interface FitnessMetrics {
   series: FitnessPoint[]
   current: { ctl: number; atl: number; tsb: number }
+  readiness: Readiness
+  recent_wellness: DailyWellness[]
   cross_sport_transfer: Record<string, number>
   season: Season
   season_confidence: number

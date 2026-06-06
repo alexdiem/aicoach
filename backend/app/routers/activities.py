@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, timedelta
 from typing import Optional
 
@@ -7,9 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.activity import Activity
-from app.services.garmin import get_garmin_client, parse_garmin_activity
+from app.models.wellness import DailyWellness
+from app.services.garmin import get_garmin_client, parse_garmin_activity, parse_wellness
 
 router = APIRouter(prefix="/activities", tags=["activities"])
+
+_WELLNESS_WINDOW = 14  # days of wellness to sync regardless of days_back
 
 
 @router.post("/sync")
@@ -18,7 +22,7 @@ async def sync_activities(
     days_back: int = Query(default=30, le=365),
     db: AsyncSession = Depends(get_db),
 ):
-    """Pull recent activities from Garmin Connect and store in DB."""
+    """Pull recent activities and wellness data from Garmin Connect."""
     garmin = get_garmin_client()
     end = date.today()
     start = end - timedelta(days=days_back)
@@ -40,6 +44,40 @@ async def sync_activities(
         activity = Activity(athlete_id=athlete_id, **{k: v for k, v in parsed.items()})
         db.add(activity)
         new_count += 1
+
+    # Sync wellness for the recent window (concurrent fetches per day)
+    wellness_start = end - timedelta(days=_WELLNESS_WINDOW - 1)
+    wellness_dates = [wellness_start + timedelta(days=i) for i in range(_WELLNESS_WINDOW)]
+
+    async def _fetch_day(d: date):
+        results = await asyncio.gather(
+            garmin.get_stats(d),
+            garmin.get_hrv_data(d),
+            garmin.get_sleep_data(d),
+            garmin.get_body_battery(d),
+            return_exceptions=True,
+        )
+        return d, tuple(r if not isinstance(r, Exception) else None for r in results)
+
+    day_results = await asyncio.gather(*[_fetch_day(d) for d in wellness_dates])
+
+    for d, (stats, hrv, sleep, bb) in day_results:
+        parsed_w = parse_wellness(stats, hrv, sleep, bb)
+        if not any(v is not None for v in parsed_w.values()):
+            continue
+        existing = await db.execute(
+            select(DailyWellness).where(
+                DailyWellness.athlete_id == athlete_id,
+                DailyWellness.date == d,
+            )
+        )
+        row = existing.scalar_one_or_none()
+        if row is None:
+            row = DailyWellness(athlete_id=athlete_id, date=d)
+            db.add(row)
+        for k, v in parsed_w.items():
+            if v is not None:
+                setattr(row, k, v)
 
     return {"synced": new_count, "date_range": f"{start} to {end}"}
 

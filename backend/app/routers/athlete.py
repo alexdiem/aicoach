@@ -2,16 +2,18 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_athlete_or_404
 from app.models.activity import Activity
 from app.models.athlete import Athlete
+from app.models.wellness import DailyWellness
 from app.services.fitness import (
     calculate_ctl_atl_tsb,
     calculate_daily_loads,
+    calculate_readiness,
     cross_sport_aerobic_transfer,
     estimate_vo2max_trend,
 )
@@ -75,9 +77,36 @@ async def get_fitness_metrics(
 
     latest = series[-1] if series else {"ctl": 0, "atl": 0, "tsb": 0}
 
+    wellness_result = await db.execute(
+        select(DailyWellness)
+        .where(
+            DailyWellness.athlete_id == athlete.id,
+            DailyWellness.date >= date.today() - timedelta(days=7),
+        )
+        .order_by(desc(DailyWellness.date))
+    )
+    wellness_rows = list(wellness_result.scalars().all())
+    readiness = calculate_readiness(latest["tsb"], wellness_rows)
+
+    recent_wellness = [
+        {
+            "date": w.date.isoformat(),
+            "body_battery_max": w.body_battery_max,
+            "hrv_status": w.hrv_status,
+            "hrv_last_night_avg": w.hrv_last_night_avg,
+            "sleep_score": w.sleep_score,
+            "sleep_hours": round(w.sleep_duration_seconds / 3600, 1) if w.sleep_duration_seconds else None,
+            "resting_hr": w.resting_heart_rate,
+            "avg_stress": w.avg_stress_level,
+        }
+        for w in wellness_rows
+    ]
+
     return {
         "series": series,
         "current": latest,
+        "readiness": readiness,
+        "recent_wellness": recent_wellness,
         "cross_sport_transfer": transfer,
         "season": season,
         "season_confidence": round(confidence, 2),
