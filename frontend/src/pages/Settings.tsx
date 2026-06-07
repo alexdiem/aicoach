@@ -37,7 +37,7 @@ export default function Settings() {
   const [lthr, setLthr] = useState('')
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
-  const [syncing, setSyncing] = useState(false)
+  const [syncingDays, setSyncingDays] = useState<number | null>(null)
   const [syncResult, setSyncResult] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
@@ -63,7 +63,7 @@ export default function Settings() {
   }
 
   async function handleSync(days: number) {
-    setSyncing(true)
+    setSyncingDays(days)
     setSyncResult(null)
     try {
       const r = await syncActivities(athleteId, days)
@@ -72,7 +72,7 @@ export default function Settings() {
       const msg = e instanceof Error ? e.message : 'Unknown error'
       setSyncResult(`Sync failed: ${msg}`)
     } finally {
-      setSyncing(false)
+      setSyncingDays(null)
     }
   }
 
@@ -90,22 +90,20 @@ export default function Settings() {
           </span>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button
-            onClick={() => handleSync(30)}
-            disabled={syncing}
-            className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200"
-          >
-            <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
-            {syncing ? 'Syncing…' : 'Sync last 30 days'}
-          </button>
-          <button
-            onClick={() => handleSync(180)}
-            disabled={syncing}
-            className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200"
-          >
-            <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
-            {syncing ? 'Syncing…' : 'Sync last 6 months'}
-          </button>
+          {([{ days: 30, label: 'Sync last 30 days' }, { days: 180, label: 'Sync last 6 months' }] as const).map(({ days, label }) => {
+            const active = syncingDays === days
+            return (
+              <button
+                key={days}
+                onClick={() => handleSync(days)}
+                disabled={syncingDays !== null}
+                className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200"
+              >
+                <RefreshCw size={13} className={active ? 'animate-spin' : ''} />
+                {active ? 'Syncing…' : label}
+              </button>
+            )
+          })}
         </div>
         {syncResult && (
           <p className="text-sm text-gray-500 mt-3 flex items-center gap-2">

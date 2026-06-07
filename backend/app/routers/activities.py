@@ -1,6 +1,9 @@
 import asyncio
+import logging
 from datetime import date, timedelta
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, desc
@@ -30,22 +33,24 @@ async def sync_activities(
     try:
         raw_activities = await garmin.get_activities(start, end)
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).exception("Garmin sync failed")
+        logger.exception("Garmin activity fetch failed")
         raise HTTPException(status_code=502, detail=f"Garmin fetch failed: {type(e).__name__}: {e}")
 
     new_count = 0
     for raw in raw_activities:
-        parsed = parse_garmin_activity(raw)
-        garmin_id = parsed.get("garmin_activity_id")
-        if garmin_id:
-            existing = await db.execute(select(Activity).where(Activity.garmin_activity_id == garmin_id))
-            if existing.scalar_one_or_none():
-                continue
+        try:
+            parsed = parse_garmin_activity(raw)
+            garmin_id = parsed.get("garmin_activity_id")
+            if garmin_id:
+                existing = await db.execute(select(Activity).where(Activity.garmin_activity_id == garmin_id))
+                if existing.scalar_one_or_none():
+                    continue
 
-        activity = Activity(athlete_id=athlete_id, **{k: v for k, v in parsed.items()})
-        db.add(activity)
-        new_count += 1
+            activity = Activity(athlete_id=athlete_id, **{k: v for k, v in parsed.items()})
+            db.add(activity)
+            new_count += 1
+        except Exception:
+            logger.exception("Failed to parse/save activity (skipped): %s", raw.get("activityId"))
 
     # Sync wellness for the recent window (concurrent fetches per day)
     wellness_start = end - timedelta(days=_WELLNESS_WINDOW - 1)
@@ -61,25 +66,31 @@ async def sync_activities(
         )
         return d, tuple(r if not isinstance(r, Exception) else None for r in results)
 
-    day_results = await asyncio.gather(*[_fetch_day(d) for d in wellness_dates])
-
-    for d, (stats, hrv, sleep, bb) in day_results:
-        parsed_w = parse_wellness(stats, hrv, sleep, bb)
-        if not any(v is not None for v in parsed_w.values()):
-            continue
-        existing = await db.execute(
-            select(DailyWellness).where(
-                DailyWellness.athlete_id == athlete_id,
-                DailyWellness.date == d,
+    try:
+        day_results = await asyncio.gather(*[_fetch_day(d) for d in wellness_dates], return_exceptions=True)
+        for result in day_results:
+            if isinstance(result, Exception):
+                logger.warning("Wellness fetch error (skipped): %s", result)
+                continue
+            d, (stats, hrv, sleep, bb) = result
+            parsed_w = parse_wellness(stats, hrv, sleep, bb)
+            if not any(v is not None for v in parsed_w.values()):
+                continue
+            existing = await db.execute(
+                select(DailyWellness).where(
+                    DailyWellness.athlete_id == athlete_id,
+                    DailyWellness.date == d,
+                )
             )
-        )
-        row = existing.scalar_one_or_none()
-        if row is None:
-            row = DailyWellness(athlete_id=athlete_id, date=d)
-            db.add(row)
-        for k, v in parsed_w.items():
-            if v is not None:
-                setattr(row, k, v)
+            row = existing.scalar_one_or_none()
+            if row is None:
+                row = DailyWellness(athlete_id=athlete_id, date=d)
+                db.add(row)
+            for k, v in parsed_w.items():
+                if v is not None:
+                    setattr(row, k, v)
+    except Exception:
+        logger.exception("Wellness sync failed (activities still saved)")
 
     return {"synced": new_count, "date_range": f"{start} to {end}"}
 
