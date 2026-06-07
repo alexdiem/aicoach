@@ -479,11 +479,12 @@ export default function Plan() {
                       )}
 
                       {!w.is_unstructured && (() => {
+                        const overridden = w.id in sessionOverrides
                         const routeName = (sessionOverrides[w.id] ?? w.structured_session)?.route_name
                         if (routeName) {
                           return <p className="text-xs text-indigo-600 mt-2 font-medium">🗺 {routeName}</p>
                         }
-                        if (w.terrain_notes) {
+                        if (!overridden && w.terrain_notes) {
                           return <p className="text-xs text-amber-600 mt-2 leading-relaxed">⛰ {w.terrain_notes}</p>
                         }
                         return null
