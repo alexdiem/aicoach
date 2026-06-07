@@ -131,6 +131,11 @@ _MAX_REST_BETWEEN_EFFORTS: dict[str, float] = {
     "THRESHOLD": 12.0,
     "TEMPO": 20.0,
 }
+_MIN_REST_BETWEEN_EFFORTS: dict[str, float] = {
+    "VO2MAX": 4.0,
+    "THRESHOLD": 4.0,
+    "TEMPO": 2.0,
+}
 _DESCENT_SPEED_KMH = 32.0
 
 
@@ -361,16 +366,21 @@ def _build_route_ride(
     intervals: list[dict] = []
     prev_end_km = training_start_km
     hard_rep, hard_rep_count = 0, len(selected)
+    min_rest_min = _MIN_REST_BETWEEN_EFFORTS.get(workout_type, 2.0)
 
     for seg in active_segments:
         gap_km = seg["start_km"] - prev_end_km
         if gap_km > 0.5:
-            gap_min = max(2, round(gap_km / _DESCENT_SPEED_KMH * 60))
             inside = (
                 cluster_start is not None
                 and prev_end_km >= cluster_start - 0.1
                 and seg["start_km"] <= cluster_end + 0.1
             )
+            raw_gap_min = round(gap_km / _DESCENT_SPEED_KMH * 60)
+            # Inside the structured block enforce the same minimum recovery as
+            # the equivalent indoor session — short descents don't give enough
+            # time to recover properly.
+            gap_min = max(min_rest_min if inside else 2, raw_gap_min)
             note = (
                 f"Recovery — {gap_min} min easy spin before next climb. Drink, breathe."
                 if inside else
