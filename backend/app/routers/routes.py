@@ -49,7 +49,7 @@ async def upload_route(
     route = Route(
         athlete_id=athlete_id,
         name=name,
-        gpx_data=None,
+        gpx_data="",
         total_distance_meters=analysis.get("total_distance_m", 0),
         total_elevation_gain_meters=analysis.get("total_gain_m", 0),
         analysis=analysis,
