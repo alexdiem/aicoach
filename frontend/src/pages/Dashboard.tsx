@@ -262,10 +262,10 @@ export default function Dashboard() {
 
       {/* ── TRAIN NOW tile — col 4, rows 1-2 ─────────────────────────── */}
       <div
-        className="rounded-2xl border border-slate-800 bg-slate-900 overflow-hidden"
+        className="rounded-2xl border border-indigo-100 bg-indigo-50 overflow-hidden"
         style={{ gridColumn: '4', gridRow: '1 / 3' }}
       >
-        <TrainNow athleteId={athleteId} dark />
+        <TrainNow athleteId={athleteId} />
       </div>
 
       {/* ── CTL tile — col 1, row 2 ───────────────────────────────────── */}
@@ -327,13 +327,13 @@ export default function Dashboard() {
 
       {/* ── CHART tile — cols 1-3, row 3 ─────────────────────────────── */}
       <div
-        className="rounded-2xl p-5 border border-gray-800 bg-gray-900"
-        style={{ gridColumn: '1 / 4', gridRow: '3' }}
+        className="rounded-2xl p-5 border border-gray-200 bg-white"
+        style={{ gridColumn: '1 / 4', gridRow: '3', alignSelf: 'start' }}
       >
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">90-Day Training Load</p>
         {fitness && fitness.series.length > 0
           ? <FitnessChart data={fitness.series} />
-          : <p className="text-sm text-gray-600 py-8 text-center">No fitness data yet.</p>
+          : <p className="text-sm text-gray-400 py-8 text-center">No fitness data yet.</p>
         }
       </div>
 
@@ -351,7 +351,7 @@ export default function Dashboard() {
       {/* ── THIS WEEK tile — cols 1-3, row 4 ─────────────────────────── */}
       <div
         className="rounded-2xl p-5 border border-gray-200 bg-white"
-        style={{ gridColumn: '1 / 4', gridRow: '4' }}
+        style={{ gridColumn: '1 / 4', gridRow: '4', alignSelf: 'start' }}
       >
         <div className="flex items-center justify-between mb-3">
           <TileLabel color="#374151">This Week</TileLabel>
