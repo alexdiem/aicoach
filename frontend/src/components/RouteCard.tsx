@@ -115,33 +115,44 @@ export default function RouteCard({ route, onDelete, onUpdate }: Props) {
         </div>
       )}
 
-      {/* Training km range editor */}
-      <div className="border-t border-gray-100 pt-3">
-        <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-2">
-          Training zone · <span className="text-gray-500 normal-case font-normal">{rangeLabel}</span>
+      {/* Training km range */}
+      <div className="rounded-xl bg-indigo-50 border border-indigo-100 p-3">
+        <p className="text-xs font-semibold text-indigo-700 mb-2">
+          Training zone
+          {hasRange && <span className="ml-1.5 font-normal text-indigo-500">{rangeLabel}</span>}
         </p>
-        <div className="flex items-center gap-2">
-          <input
-            type="number"
-            min={0}
-            max={route.distance_km}
-            step={0.1}
-            value={startKm}
-            onChange={(e) => setStartKm(e.target.value)}
-            placeholder="Start km"
-            className="w-24 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-gray-900 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
-          />
-          <span className="text-gray-400 text-xs">→</span>
-          <input
-            type="number"
-            min={0}
-            max={route.distance_km}
-            step={0.1}
-            value={endKm}
-            onChange={(e) => setEndKm(e.target.value)}
-            placeholder="End km"
-            className="w-24 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-gray-900 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
-          />
+        <p className="text-[10px] text-indigo-400 mb-2.5 leading-snug">
+          Set where structured intervals can start and end — sections outside this range
+          are treated as commute (warm-up / cool-down only).
+        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-indigo-400 w-12">Start km</span>
+            <input
+              type="number"
+              min={0}
+              max={route.distance_km}
+              step={0.1}
+              value={startKm}
+              onChange={(e) => setStartKm(e.target.value)}
+              placeholder="0"
+              className="w-20 bg-white border border-indigo-200 rounded-lg px-2 py-1.5 text-gray-900 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            />
+          </div>
+          <span className="text-indigo-300 text-xs">→</span>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-indigo-400 w-12">End km</span>
+            <input
+              type="number"
+              min={0}
+              max={route.distance_km}
+              step={0.1}
+              value={endKm}
+              onChange={(e) => setEndKm(e.target.value)}
+              placeholder={String(route.distance_km)}
+              className="w-20 bg-white border border-indigo-200 rounded-lg px-2 py-1.5 text-gray-900 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            />
+          </div>
           <button
             onClick={handleSaveRange}
             disabled={saving}

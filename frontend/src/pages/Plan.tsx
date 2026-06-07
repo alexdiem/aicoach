@@ -478,9 +478,16 @@ export default function Plan() {
                         <p className="text-sm text-gray-600 leading-relaxed">{w.purpose}</p>
                       )}
 
-                      {!w.is_unstructured && w.terrain_notes && (
-                        <p className="text-xs text-amber-600 mt-2 leading-relaxed">⛰ {w.terrain_notes}</p>
-                      )}
+                      {!w.is_unstructured && (() => {
+                        const routeName = (sessionOverrides[w.id] ?? w.structured_session)?.route_name
+                        if (routeName) {
+                          return <p className="text-xs text-indigo-600 mt-2 font-medium">🗺 {routeName}</p>
+                        }
+                        if (w.terrain_notes) {
+                          return <p className="text-xs text-amber-600 mt-2 leading-relaxed">⛰ {w.terrain_notes}</p>
+                        }
+                        return null
+                      })()}
 
                       {w.ai_compliance_notes && (
                         <p className="text-xs text-gray-400 mt-2 italic">Compliance: {w.ai_compliance_notes}</p>
