@@ -100,6 +100,45 @@ def _merge_consecutive_rests(intervals: list[dict]) -> list[dict]:
     return merged
 
 
+def _enforce_min_rest_between_work(intervals: list[dict], min_rest_min: float) -> list[dict]:
+    """
+    Demote any work interval that has less than min_rest_min of rest before it
+    (counting all rest-type steps since the previous work interval).
+    Repeats until no violations remain, then renumbers rep/total_reps.
+    """
+    result = [dict(step) for step in intervals]
+    changed = True
+    while changed:
+        changed = False
+        last_work_idx: int | None = None
+        for i, step in enumerate(result):
+            if step["type"] != "work":
+                continue
+            if last_work_idx is not None:
+                rest_between = sum(
+                    s["duration_minutes"] for s in result[last_work_idx + 1 : i]
+                    if s["type"] == "rest"
+                )
+                if rest_between < min_rest_min:
+                    result[i]["type"] = "rest"
+                    result[i].pop("rep", None)
+                    result[i].pop("total_reps", None)
+                    result[i].pop("target", None)
+                    result[i]["notes"] = (
+                        result[i].get("notes", "").rstrip(". ")
+                        + " Free ride / Z2 — insufficient recovery from previous effort."
+                    )
+                    changed = True
+                    break
+            last_work_idx = i
+
+    work_steps = [s for s in result if s["type"] == "work"]
+    for idx, step in enumerate(work_steps):
+        step["rep"] = idx + 1
+        step["total_reps"] = len(work_steps)
+    return result
+
+
 def _make_session(warmup_min, warmup_notes, intervals, cooldown_min, cooldown_notes, route):
     merged = _merge_consecutive_rests(intervals)
     total = warmup_min + sum(i["duration_minutes"] for i in merged) + cooldown_min
@@ -450,6 +489,7 @@ def _build_route_ride(
             if estimated_total > duration_minutes + 15 else ""
         )
         cooldown_notes = "Done — free ride / Z2 until you finish the route." + extra
+    intervals = _enforce_min_rest_between_work(intervals, min_rest_min)
     session = _make_session(
         warmup_min, warmup_notes, intervals,
         cooldown_min, cooldown_notes,
