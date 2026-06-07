@@ -4,11 +4,12 @@ Designed for hilly terrain (Oslo area) where flat intervals aren't realistic.
 """
 from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING
 
 import gpxpy
 import gpxpy.gpx
+
+from app.services.geo import haversine
 
 if TYPE_CHECKING:
     from app.models.route import Route
@@ -28,14 +29,9 @@ def _smooth(arr: list[float], w: int) -> list[float]:
     return result
 
 
-def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Distance between two GPS points in meters."""
-    R = 6371000
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
-    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-    return 2 * R * math.asin(math.sqrt(a))
+def _climb_speed_mps(gradient_pct: float) -> float:
+    """Estimated climbing speed (m/s) at FTP effort for a given average gradient."""
+    return max(1.0, 1.67 * (5.0 / max(gradient_pct, 1.0)) ** 0.3)
 
 
 def analyze_points(points: list[dict]) -> dict:
@@ -77,7 +73,7 @@ def analyze_points(points: list[dict]) -> dict:
                 ele_gain = max(0, points[end_idx]["ele"] - points[climb_start_idx]["ele"])
                 avg_grad = (ele_gain / length * 100) if length > 0 else 0.0
                 category = categorize_climb(length, avg_grad)
-                speed_mps = max(1.0, 1.67 * (5.0 / max(avg_grad, 1.0)) ** 0.3)
+                speed_mps = _climb_speed_mps(avg_grad)
                 est_duration_min = (length / speed_mps) / 60
 
                 climb_segments.append({
@@ -152,7 +148,7 @@ def analyze_gpx(gpx_content: str) -> dict:
     cumulative = 0.0
     for i, pt in enumerate(raw_points):
         if i > 0:
-            cumulative += _haversine(
+            cumulative += haversine(
                 raw_points[i - 1]["lat"], raw_points[i - 1]["lon"],
                 pt["lat"], pt["lon"]
             )
@@ -172,7 +168,7 @@ def categorize_climb(length_m: float, avg_gradient_pct: float) -> str:
     """
     if avg_gradient_pct < 2.0:
         return "FLAT"
-    speed_mps = max(1.0, 1.67 * (5.0 / max(avg_gradient_pct, 1.0)) ** 0.3)
+    speed_mps = _climb_speed_mps(avg_gradient_pct)
     duration_min = (length_m / speed_mps) / 60
     if duration_min < 2:
         return "SHORT_PUNCH"

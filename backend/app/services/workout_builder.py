@@ -18,6 +18,11 @@ if TYPE_CHECKING:
     from app.models.route import Route
 
 
+def _seg_key(seg: dict) -> tuple:
+    """Stable identity for a segment, independent of object identity."""
+    return (seg["start_km"], seg["end_km"])
+
+
 def build_structured_session(
     workout_type: str,
     duration_minutes: int,
@@ -352,14 +357,14 @@ def _build_route_ride(
         max_rest_min=max_rest_min,
         rank_fn=cfg.rank_fn,
     )
-    selected_ids = {id(s) for s in selected}
+    selected_ids = {_seg_key(s) for s in selected}
 
     cluster_start = selected[0]["start_km"] if selected else None
     cluster_end   = selected[-1]["end_km"]   if selected else None
 
     # Precompute which secondary segments fall inside the cluster
     secondary_in_cluster_ids = {
-        id(s) for s in active_segments
+        _seg_key(s) for s in active_segments
         if s["category"] in cfg.secondary_cats
         and cluster_start is not None
         and s["start_km"] >= cluster_start
@@ -436,7 +441,7 @@ def _build_route_ride(
         )
         base = f"Km {seg['start_km']:.1f}: {seg['category'].replace('_', ' ').title()} — {length_str} at {seg['avg_gradient_pct']}% avg."
 
-        if id(seg) in selected_ids:
+        if _seg_key(seg) in selected_ids:
             hard_rep += 1
             step: dict = {
                 "type": "work", "rep": hard_rep, "total_reps": hard_rep_count,
@@ -445,7 +450,7 @@ def _build_route_ride(
                 "notes": f"{base} {cfg.primary_label}.",
                 "segment": seg,
             }
-        elif id(seg) in secondary_in_cluster_ids:
+        elif _seg_key(seg) in secondary_in_cluster_ids:
             step = {
                 "type": "rest", "duration_minutes": dur,
                 "target": cfg.secondary_target,

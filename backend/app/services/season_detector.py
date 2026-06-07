@@ -12,7 +12,6 @@ if TYPE_CHECKING:
 
 # Calendar prior: months where skiing is expected in Norway
 SKI_MONTHS = {11, 12, 1, 2, 3, 4}
-CYCLING_MONTHS = {5, 6, 7, 8, 9, 10}
 
 
 def detect_season(recent_activities: list["Activity"]) -> tuple[str, float]:

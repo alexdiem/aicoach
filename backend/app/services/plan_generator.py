@@ -275,7 +275,8 @@ def _apply_athlete_schedule(
                 filler_type = filler["type"]
                 filler_duration = filler["duration"]
                 if phase == "RECOVERY":
-                    filler_type = "RECOVERY" if filler_type != "STRENGTH" else "STRENGTH"
+                    if filler_type != "STRENGTH":
+                        filler_type = "RECOVERY"
                     filler_duration = max(30, filler_duration - 15)
                 result[dow] = {
                     "day_of_week": dow,

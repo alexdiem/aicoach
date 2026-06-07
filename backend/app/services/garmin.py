@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from garminconnect import Garmin, GarminConnectAuthenticationError
 
@@ -225,7 +225,7 @@ def parse_garmin_activity(raw: dict) -> dict:
     try:
         start_time = datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
     except Exception:
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
     # Distance: library returns meters
     distance = raw.get("distance") or raw.get("distanceInMeters")

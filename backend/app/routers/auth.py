@@ -52,7 +52,11 @@ async def connect(db: AsyncSession = Depends(get_db)):
     try:
         metrics = await garmin.get_max_metrics()
         if metrics:
-            vo2max_cycling = metrics.get("vo2MaxPreciseValue") or metrics.get("vo2MaxValue")
+            # get_max_metrics() returns the running VO2max only; the payload does
+            # not expose a distinct cycling VO2max field. Avoid duplicating the
+            # running value into the cycling slot.
+            # TODO: source cycling VO2max separately (Garmin reports it under a
+            #       different endpoint/sport context) and populate vo2max_cycling.
             vo2max_running = metrics.get("vo2MaxPreciseValue") or metrics.get("vo2MaxValue")
     except Exception:
         pass

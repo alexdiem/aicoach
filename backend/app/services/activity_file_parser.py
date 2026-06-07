@@ -4,20 +4,11 @@ Parse FIT or GPX activity files into a unified dict with per-GPS-point performan
 from __future__ import annotations
 
 import io
-import math
 import xml.etree.ElementTree as ET
 
 import gpxpy
 
-
-def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Distance between two GPS points in meters."""
-    R = 6371000
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
-    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-    return 2 * R * math.asin(math.sqrt(a))
+from app.services.geo import haversine
 
 
 def _parse_fit(content: bytes) -> dict:
@@ -48,52 +39,58 @@ def _parse_fit(content: bytes) -> dict:
     return {'points': points, 'total_distance_m': total_dist, 'total_gain_m': total_gain}
 
 
+def _extract_trkpt_extensions(trkpt) -> tuple[int | None, int | None]:
+    """Return (hr, power) parsed from a raw GPX trkpt element, or (None, None)."""
+    hr = None
+    power = None
+    ext = trkpt.find('.//{http://www.garmin.com/xmlschemas/TrackPointExtension/v1}TrackPointExtension')
+    if ext is not None:
+        hr_el = ext.find('{http://www.garmin.com/xmlschemas/TrackPointExtension/v1}hr')
+        if hr_el is not None and hr_el.text:
+            hr = int(hr_el.text)
+    # power in various namespaces
+    for tag in ['{http://www.garmin.com/xmlschemas/PowerExtension/v1}PowerInWatts',
+                '{http://www.garmin.com/xmlschemas/TrackPointExtension/v1}power',
+                'power']:
+        pw = trkpt.find('.//' + tag) if tag.startswith('{') else trkpt.find(tag)
+        if pw is not None and pw.text:
+            try:
+                power = int(float(pw.text))
+                break
+            except ValueError:
+                pass
+    return hr, power
+
+
 def _parse_gpx_activity(content: bytes) -> dict:
     gpx_text = content.decode('utf-8', errors='replace')
     gpx = gpxpy.parse(gpx_text)
-    # Also parse raw XML for extensions
+    # Also parse raw XML for extensions, matched positionally to gpxpy points.
     root = ET.fromstring(gpx_text)
+    trkpts = root.findall('.//gpx:trkpt', {'gpx': 'http://www.topografix.com/GPX/1/1'})
 
     points = []
     cumulative_dist = 0.0
     prev_pt = None
+    raw_idx = 0  # index into trkpts, advanced for every gpxpy point seen
 
     for track in gpx.tracks:
         for segment in track.segments:
             for pt in segment.points:
+                raw_trkpt = trkpts[raw_idx] if raw_idx < len(trkpts) else None
+                raw_idx += 1
                 if pt.latitude is None or pt.longitude is None:
                     continue
                 if prev_pt:
-                    cumulative_dist += _haversine(prev_pt.latitude, prev_pt.longitude, pt.latitude, pt.longitude)
+                    cumulative_dist += haversine(prev_pt.latitude, prev_pt.longitude, pt.latitude, pt.longitude)
+                hr, power = _extract_trkpt_extensions(raw_trkpt) if raw_trkpt is not None else (None, None)
                 points.append({
                     'lat': pt.latitude, 'lon': pt.longitude,
                     'ele': pt.elevation or 0.0,
                     'dist_m': cumulative_dist,
-                    'power': None, 'hr': None, 'speed_ms': None,
+                    'power': power, 'hr': hr, 'speed_ms': None,
                 })
                 prev_pt = pt
-
-    # Extract extensions from raw XML
-    trkpts = root.findall('.//gpx:trkpt', {'gpx': 'http://www.topografix.com/GPX/1/1'})
-    for i, trkpt in enumerate(trkpts):
-        if i >= len(points):
-            break
-        ext = trkpt.find('.//{http://www.garmin.com/xmlschemas/TrackPointExtension/v1}TrackPointExtension')
-        if ext is not None:
-            hr_el = ext.find('{http://www.garmin.com/xmlschemas/TrackPointExtension/v1}hr')
-            if hr_el is not None and hr_el.text:
-                points[i]['hr'] = int(hr_el.text)
-        # power in various namespaces
-        for tag in ['{http://www.garmin.com/xmlschemas/PowerExtension/v1}PowerInWatts',
-                    '{http://www.garmin.com/xmlschemas/TrackPointExtension/v1}power',
-                    'power']:
-            pw = trkpt.find('.//' + tag) if tag.startswith('{') else trkpt.find(tag)
-            if pw is not None and pw.text:
-                try:
-                    points[i]['power'] = int(float(pw.text))
-                    break
-                except ValueError:
-                    pass
 
     total_gain = sum(max(0, points[i]['ele'] - points[i-1]['ele']) for i in range(1, len(points)))
     total_dist = points[-1]['dist_m'] if points else 0.0

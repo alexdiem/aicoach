@@ -193,7 +193,7 @@ async def suggest_workout_modification(
         "Suggest in 1-2 sentences how to adapt this workout for available terrain or trainer."
     )
     resp = await _get_client().messages.create(
-        model="claude-haiku-4-5-20251001",
+        model=DEFAULT_MODEL,
         max_tokens=120,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
