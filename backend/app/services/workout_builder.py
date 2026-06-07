@@ -285,24 +285,25 @@ def _build_route_ride(
             for s in all_segments
         ]
 
-    # Apply km range filter if set
+    # Commute zone limits — sections outside these km are off-limits for structured effort
     start_km_limit = getattr(route, "start_km", None)
     end_km_limit = getattr(route, "end_km", None)
-    if start_km_limit is not None or end_km_limit is not None:
-        all_segments = [
-            s for s in all_segments
-            if (start_km_limit is None or s["end_km"] >= start_km_limit)
-            and (end_km_limit is None or s["start_km"] <= end_km_limit)
-        ]
+
+    # Only consider segments within the active training zone
+    active_segments = [
+        s for s in all_segments
+        if (start_km_limit is None or s["end_km"] > start_km_limit)
+        and (end_km_limit is None or s["start_km"] < end_km_limit)
+    ]
 
     estimated_total = _estimate_route_time_min(dist_km, gain_m)
 
     cfg = _workout_config(workout_type, ftp)
     max_rest_min = _MAX_REST_BETWEEN_EFFORTS.get(workout_type, 12.0)
 
-    primary_candidates = [s for s in all_segments if s["category"] in cfg.primary_cats]
+    primary_candidates = [s for s in active_segments if s["category"] in cfg.primary_cats]
     selected = _find_best_cluster(
-        primary_candidates, all_segments,
+        primary_candidates, active_segments,
         hard_budget_min=duration_minutes * 0.60,
         max_rest_min=max_rest_min,
         rank_fn=cfg.rank_fn,
@@ -314,31 +315,54 @@ def _build_route_ride(
 
     # Precompute which secondary segments fall inside the cluster
     secondary_in_cluster_ids = {
-        id(s) for s in all_segments
+        id(s) for s in active_segments
         if s["category"] in cfg.secondary_cats
         and cluster_start is not None
         and s["start_km"] >= cluster_start
         and s["end_km"] <= cluster_end + 0.1
     }
 
-    # Warmup
-    first_km = all_segments[0]["start_km"] if all_segments else dist_km * 0.1
-    warmup_min = max(8, round(min(first_km, 10.0) / 28 * 60))
-    if cluster_start is not None and cluster_start > first_km + 1.0:
-        ride_in_min = max(5, round((cluster_start - first_km) / _DESCENT_SPEED_KMH * 60))
-        warmup_notes = (
-            f"First {first_km:.1f} km at Z2 to warm up. "
-            f"Then free ride {ride_in_min} min to the workout section (km {cluster_start:.1f})."
-        )
-    else:
-        warmup_notes = f"First {first_km:.1f} km at easy Z2 — settle in before the terrain starts."
+    # ── Warmup ────────────────────────────────────────────────────────────────
+    # The warmup covers everything from the route start up to the training zone.
+    # If there is a commute-in section, it is folded into warmup with a note
+    # that no structured effort is possible there (traffic, lights, etc.).
+    training_start_km = start_km_limit if start_km_limit is not None else (
+        active_segments[0]["start_km"] if active_segments else dist_km * 0.1
+    )
+    warmup_min = max(8, round(training_start_km / 28 * 60))
 
-    # Build intervals
+    if start_km_limit is not None and start_km_limit > 0.5:
+        commute_in_min = max(5, round(start_km_limit / 28 * 60))
+        if cluster_start is not None and cluster_start > start_km_limit + 1.0:
+            ride_in_min = max(3, round((cluster_start - start_km_limit) / _DESCENT_SPEED_KMH * 60))
+            warmup_notes = (
+                f"Km 0–{start_km_limit:.1f}: commute to training area (~{commute_in_min} min). "
+                "Traffic/lights — spin easy, no structured effort. "
+                f"From km {start_km_limit:.1f}: {ride_in_min} min Z2 ride-in to workout section (km {cluster_start:.1f})."
+            )
+        else:
+            warmup_notes = (
+                f"Km 0–{start_km_limit:.1f}: commute to training area (~{commute_in_min} min). "
+                "Traffic/lights — spin easy, no structured effort possible here."
+            )
+    else:
+        first_km = active_segments[0]["start_km"] if active_segments else dist_km * 0.1
+        warmup_min = max(8, round(min(first_km, 10.0) / 28 * 60))
+        if cluster_start is not None and cluster_start > first_km + 1.0:
+            ride_in_min = max(5, round((cluster_start - first_km) / _DESCENT_SPEED_KMH * 60))
+            warmup_notes = (
+                f"First {first_km:.1f} km at Z2 to warm up. "
+                f"Then free ride {ride_in_min} min to the workout section (km {cluster_start:.1f})."
+            )
+        else:
+            warmup_notes = f"First {training_start_km:.1f} km at easy Z2 — settle in before the terrain starts."
+
+    # ── Interval loop — only within the active training zone ─────────────────
     intervals: list[dict] = []
-    prev_end_km = first_km
+    prev_end_km = training_start_km
     hard_rep, hard_rep_count = 0, len(selected)
 
-    for seg in all_segments:
+    for seg in active_segments:
         gap_km = seg["start_km"] - prev_end_km
         if gap_km > 0.5:
             gap_min = max(2, round(gap_km / _DESCENT_SPEED_KMH * 60))
@@ -388,22 +412,37 @@ def _build_route_ride(
         intervals.append(step)
         prev_end_km = seg["end_km"]
 
-    tail_km = dist_km - prev_end_km
-    if tail_km > 0.5:
-        tail_min = max(5, round(tail_km / _DESCENT_SPEED_KMH * 60))
+    # Gap from last segment to end of training zone
+    training_end_km = end_km_limit if end_km_limit is not None else dist_km
+    tail_active_km = training_end_km - prev_end_km
+    if tail_active_km > 0.5:
+        tail_min = max(3, round(tail_active_km / _DESCENT_SPEED_KMH * 60))
         intervals.append({
             "type": "rest", "duration_minutes": tail_min,
-            "notes": f"Final {tail_km:.1f} km — free ride home. Spin out, let HR drop.",
+            "notes": f"Km {prev_end_km:.1f}→{training_end_km:.1f}: free ride / Z2 to end of training zone.",
         })
 
-    extra = (
-        f" Note: full route is ~{estimated_total} min vs your {duration_minutes}-min plan — "
-        "the extra time is free riding outside the structured block."
-        if estimated_total > duration_minutes + 15 else ""
-    )
+    # ── Cooldown ──────────────────────────────────────────────────────────────
+    # If there is a commute-out section, it becomes the cooldown.
+    if end_km_limit is not None and dist_km - end_km_limit > 0.5:
+        commute_out_km = dist_km - end_km_limit
+        commute_out_min = max(5, round(commute_out_km / 28 * 60))
+        cooldown_notes = (
+            f"Km {end_km_limit:.1f}→{dist_km:.1f}: commute home (~{commute_out_min} min). "
+            "Traffic/lights — spin easy, workout is done."
+        )
+        cooldown_min = commute_out_min
+    else:
+        cooldown_min = 0
+        extra = (
+            f" Note: full route is ~{estimated_total} min vs your {duration_minutes}-min plan — "
+            "the extra time is free riding outside the structured block."
+            if estimated_total > duration_minutes + 15 else ""
+        )
+        cooldown_notes = "Done — free ride / Z2 until you finish the route." + extra
     session = _make_session(
         warmup_min, warmup_notes, intervals,
-        0, "Done — free ride / Z2 until you finish the route." + extra,
+        cooldown_min, cooldown_notes,
         route,
     )
     session["total_duration_minutes"] = estimated_total
