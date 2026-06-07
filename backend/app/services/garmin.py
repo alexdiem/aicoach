@@ -113,6 +113,18 @@ class GarminClient:
             return None
 
 
+def _num(val) -> float | None:
+    """Extract a plain number from a Garmin field that may be a scalar or a dict with a 'value' key."""
+    if val is None:
+        return None
+    if isinstance(val, dict):
+        val = val.get("value")
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
 def parse_wellness(
     stats: dict | None,
     hrv: dict | None,
@@ -123,32 +135,29 @@ def parse_wellness(
     out: dict = {}
 
     if stats:
-        out["resting_heart_rate"] = stats.get("restingHeartRate")
-        out["avg_stress_level"] = stats.get("averageStressLevel")
+        out["resting_heart_rate"] = _num(stats.get("restingHeartRate"))
+        out["avg_stress_level"] = _num(stats.get("averageStressLevel"))
 
     if hrv:
         hrv_summary = hrv.get("hrvSummary") or {}
-        out["hrv_last_night_avg"] = hrv_summary.get("lastNight") or hrv_summary.get("lastNightAvg")
+        out["hrv_last_night_avg"] = _num(hrv_summary.get("lastNight") or hrv_summary.get("lastNightAvg"))
         status = hrv_summary.get("status") or hrv.get("hrvStatus")
         out["hrv_status"] = str(status).capitalize() if status else None
 
     if sleep:
         daily = sleep.get("dailySleepDTO") or sleep
-        out["sleep_score"] = daily.get("sleepScores", {}).get("overall") if isinstance(daily.get("sleepScores"), dict) else daily.get("sleepScore")
-        duration = daily.get("sleepTimeSeconds") or daily.get("sleepDuration")
-        out["sleep_duration_seconds"] = float(duration) if duration else None
+        raw_score = daily.get("sleepScores", {}).get("overall") if isinstance(daily.get("sleepScores"), dict) else daily.get("sleepScore")
+        out["sleep_score"] = _num(raw_score)
+        out["sleep_duration_seconds"] = _num(daily.get("sleepTimeSeconds") or daily.get("sleepDuration"))
 
     if body_battery:
+        values = [e.get("value") for e in body_battery if e.get("value") is not None]
         charged = [e.get("charged") for e in body_battery if e.get("charged") is not None]
         drained = [e.get("drained") for e in body_battery if e.get("drained") is not None]
-        values = [e.get("value") for e in body_battery if e.get("value") is not None]
-        if values:
-            out["body_battery_max"] = max(values)
-            out["body_battery_min"] = min(values)
-        elif charged or drained:
-            all_vals = charged + drained
-            out["body_battery_max"] = max(all_vals)
-            out["body_battery_min"] = min(all_vals)
+        candidates = values or (charged + drained)
+        if candidates:
+            out["body_battery_max"] = max(candidates)
+            out["body_battery_min"] = min(candidates)
 
     return out
 

@@ -52,16 +52,16 @@ export default function RoutesPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-bold text-white">Route Library</h1>
-        <p className="text-sm text-zinc-500 mt-0.5">Upload GPX files — routes are analysed for climbs and matched to planned intervals.</p>
+        <h1 className="text-xl font-bold text-gray-900">Route Library</h1>
+        <p className="text-sm text-gray-500 mt-0.5">Upload GPX files — routes are analysed for climbs and matched to planned intervals.</p>
       </div>
 
       {/* Upload zone */}
       <div
         className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all cursor-pointer ${
           dragOver
-            ? 'border-blue-500 bg-blue-950/20'
-            : 'border-zinc-800 hover:border-zinc-600'
+            ? 'border-blue-400 bg-blue-50'
+            : 'border-gray-200 hover:border-gray-400'
         }`}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
@@ -78,22 +78,22 @@ export default function RoutesPage() {
             if (file) { setPendingFile(file); setUploadName(file.name.replace('.gpx', '')) }
           }}
         />
-        <div className="w-10 h-10 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center mx-auto mb-3">
-          <Upload size={18} className="text-zinc-400" />
+        <div className="w-10 h-10 rounded-xl bg-gray-100 border border-gray-200 flex items-center justify-center mx-auto mb-3">
+          <Upload size={18} className="text-gray-400" />
         </div>
-        <p className="text-zinc-300 text-sm font-medium">Drop a GPX file here</p>
-        <p className="text-zinc-600 text-xs mt-1">or click to browse</p>
+        <p className="text-gray-700 text-sm font-medium">Drop a GPX file here</p>
+        <p className="text-gray-400 text-xs mt-1">or click to browse</p>
       </div>
 
       {/* Pending upload */}
       {pendingFile && (
-        <div className="bg-zinc-900 rounded-2xl p-4 border border-blue-900/60 flex items-center gap-3">
+        <div className="bg-white rounded-2xl p-4 border border-indigo-200 flex items-center gap-3">
           <div className="flex-1">
-            <p className="text-xs text-zinc-500 mb-1.5">Route name</p>
+            <p className="text-xs text-gray-500 mb-1.5">Route name</p>
             <input
               value={uploadName}
               onChange={(e) => setUploadName(e.target.value)}
-              className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm w-full focus:outline-none focus:ring-1 focus:ring-indigo-400"
               placeholder="e.g. Holmenkollen loop"
             />
           </div>
@@ -106,7 +106,7 @@ export default function RoutesPage() {
           </button>
           <button
             onClick={() => setPendingFile(null)}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors p-1"
+            className="text-gray-400 hover:text-gray-700 transition-colors p-1"
           >
             <X size={16} />
           </button>
@@ -114,9 +114,9 @@ export default function RoutesPage() {
       )}
 
       {loading ? (
-        <div className="text-zinc-500 text-sm text-center py-8">Loading routes…</div>
+        <div className="text-gray-400 text-sm text-center py-8">Loading routes…</div>
       ) : routes.length === 0 ? (
-        <div className="text-center py-16 text-zinc-600">
+        <div className="text-center py-16 text-gray-400">
           <p className="text-sm">No routes yet.</p>
           <p className="text-xs mt-1">Upload a GPX file to get started.</p>
         </div>

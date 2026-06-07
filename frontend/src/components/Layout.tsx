@@ -20,10 +20,10 @@ export default function Layout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen flex bg-zinc-950">
-      <nav className="w-52 shrink-0 bg-zinc-900 border-r border-zinc-800 flex flex-col p-3">
+    <div className="min-h-screen flex bg-white">
+      <nav className="w-52 shrink-0 bg-white border-r border-gray-200 flex flex-col p-3">
         <div className="px-3 py-4 mb-2">
-          <span className="text-lg font-bold tracking-tight text-white">ai<span className="text-blue-400">coach</span></span>
+          <span className="text-lg font-bold tracking-tight text-gray-950">ai<span className="text-indigo-600">coach</span></span>
         </div>
         <div className="flex flex-col gap-0.5">
           {nav.map(({ to, label, icon: Icon }) => (
@@ -31,12 +31,12 @@ export default function Layout({ children }: { children: ReactNode }) {
               key={to}
               to={to}
               end={to === '/'}
-              className={({ isActive }) =>
+              className={({ isActive }: { isActive: boolean }) =>
                 clsx(
                   'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all',
                   isActive
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800',
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50',
                 )
               }
             >
@@ -47,11 +47,11 @@ export default function Layout({ children }: { children: ReactNode }) {
         </div>
 
         {/* Model selector */}
-        <div className="mt-auto pt-4 border-t border-zinc-800">
-          <div className="px-1 mb-1.5 flex items-center gap-1.5 text-[10px] text-zinc-600 uppercase tracking-wider">
+        <div className="mt-auto pt-4 border-t border-gray-200">
+          <div className="px-1 mb-1.5 flex items-center gap-1.5 text-[10px] text-gray-400 uppercase tracking-wider">
             <Bot size={10} /> AI Model
           </div>
-          <div className="flex rounded-lg overflow-hidden border border-zinc-700 text-xs font-medium">
+          <div className="flex rounded-lg overflow-hidden border border-gray-200 text-xs font-medium">
             {(['haiku', 'sonnet'] as ModelPref[]).map((m) => (
               <button
                 key={m}
@@ -59,20 +59,20 @@ export default function Layout({ children }: { children: ReactNode }) {
                 className={clsx(
                   'flex-1 py-1.5 transition-colors capitalize',
                   model === m
-                    ? 'bg-zinc-700 text-white'
-                    : 'text-zinc-500 hover:text-zinc-300',
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-gray-500 hover:text-gray-700 bg-white',
                 )}
               >
                 {m}
               </button>
             ))}
           </div>
-          <p className="mt-1.5 px-1 text-[10px] text-zinc-600 leading-snug">
+          <p className="mt-1.5 px-1 text-[10px] text-gray-400 leading-snug">
             {model === 'haiku' ? 'Fast · lower cost' : 'Smarter · higher cost'}
           </p>
         </div>
       </nav>
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto bg-white">
         <div className="max-w-6xl mx-auto px-6 py-8">{children}</div>
       </main>
     </div>
