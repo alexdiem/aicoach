@@ -13,6 +13,10 @@ from app.routers import activities, athlete, auth, garmin_webhook, plan, routes
 _MIGRATIONS = [
     "ALTER TABLE planned_workouts ADD COLUMN is_unstructured BOOLEAN NOT NULL DEFAULT 0",
     "ALTER TABLE planned_workouts ADD COLUMN structured_session TEXT",
+    "ALTER TABLE routes ADD COLUMN start_km REAL",
+    "ALTER TABLE routes ADD COLUMN end_km REAL",
+    "ALTER TABLE routes ADD COLUMN performance_profile TEXT",
+    "ALTER TABLE routes ADD COLUMN source_file_type TEXT",
 ]
 
 

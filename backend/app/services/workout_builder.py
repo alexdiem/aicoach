@@ -178,6 +178,13 @@ def _workout_config(workout_type: str, ftp: float | None) -> _WorkoutConfig:
     )
 
 
+def _segment_target(seg: dict, cfg: "_WorkoutConfig", ftp: float | None) -> str:
+    perf_power = seg.get("avg_power_w")
+    if perf_power and ftp:
+        return f"{round(perf_power * 0.97)}–{round(perf_power * 1.03)} W (based on your last effort here)"
+    return cfg.primary_target
+
+
 def _gap_minutes(end_km: float, start_km: float) -> float:
     return max(0.0, (start_km - end_km) / _DESCENT_SPEED_KMH * 60)
 
@@ -267,6 +274,27 @@ def _build_route_ride(
     dist_km = analysis.get("total_distance_m", 0) / 1000
     gain_m = analysis.get("total_gain_m", 0)
     all_segments = sorted(analysis.get("segments", []), key=lambda s: s.get("start_km", 0))
+
+    # Merge performance profile data into segments if available
+    perf_segs = (route.performance_profile or {}).get("segments_with_perf", [])
+    if perf_segs:
+        perf_by_pos = {(s.get("start_km"), s.get("end_km")): s for s in perf_segs}
+        all_segments = [
+            {**s, **{k: v for k, v in perf_by_pos.get((s.get("start_km"), s.get("end_km")), {}).items()
+                     if k in ("avg_power_w", "avg_hr_bpm", "avg_speed_kmh")}}
+            for s in all_segments
+        ]
+
+    # Apply km range filter if set
+    start_km_limit = getattr(route, "start_km", None)
+    end_km_limit = getattr(route, "end_km", None)
+    if start_km_limit is not None or end_km_limit is not None:
+        all_segments = [
+            s for s in all_segments
+            if (start_km_limit is None or s["end_km"] >= start_km_limit)
+            and (end_km_limit is None or s["start_km"] <= end_km_limit)
+        ]
+
     estimated_total = _estimate_route_time_min(dist_km, gain_m)
 
     cfg = _workout_config(workout_type, ftp)
@@ -340,7 +368,7 @@ def _build_route_ride(
             step: dict = {
                 "type": "work", "rep": hard_rep, "total_reps": hard_rep_count,
                 "duration_minutes": dur,
-                "target": cfg.primary_target,
+                "target": _segment_target(seg, cfg, ftp),
                 "notes": f"{base} {cfg.primary_label}.",
                 "segment": seg,
             }

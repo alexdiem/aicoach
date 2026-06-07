@@ -38,45 +38,24 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * R * math.asin(math.sqrt(a))
 
 
-def analyze_gpx(gpx_content: str) -> dict:
+def analyze_points(points: list[dict]) -> dict:
     """
-    Parse GPX and extract elevation profile + climb segments.
+    Analyze already-parsed GPS points (each with lat, lon, ele, dist_m).
     Returns analysis dict suitable for storage in Route.analysis.
     """
-    gpx = gpxpy.parse(gpx_content)
-
-    points = []
-    for track in gpx.tracks:
-        for segment in track.segments:
-            for pt in segment.points:
-                if pt.latitude and pt.longitude:
-                    points.append({
-                        "lat": pt.latitude,
-                        "lon": pt.longitude,
-                        "ele": pt.elevation or 0.0,
-                    })
-
     if len(points) < 2:
         return {"segments": [], "terrain_type": "UNKNOWN", "error": "Insufficient GPS data"}
 
-    # Calculate cumulative distance and elevation gain
-    total_distance = 0.0
+    distances = [p["dist_m"] for p in points]
+    total_distance = distances[-1]
+
     total_gain = 0.0
-    distances = [0.0]
     gradients = []
-
     for i in range(1, len(points)):
-        d = _haversine(
-            points[i - 1]["lat"], points[i - 1]["lon"],
-            points[i]["lat"], points[i]["lon"]
-        )
-        total_distance += d
-        distances.append(total_distance)
-
+        d = distances[i] - distances[i - 1]
         ele_diff = points[i]["ele"] - points[i - 1]["ele"]
         if ele_diff > 0:
             total_gain += ele_diff
-
         grad = (ele_diff / d * 100) if d > 1 else 0.0
         gradients.append(grad)
 
@@ -98,9 +77,6 @@ def analyze_gpx(gpx_content: str) -> dict:
                 ele_gain = max(0, points[end_idx]["ele"] - points[climb_start_idx]["ele"])
                 avg_grad = (ele_gain / length * 100) if length > 0 else 0.0
                 category = categorize_climb(length, avg_grad)
-                # Reference FTP rider: 3.5 W/kg, ~75kg = 262W
-                # Climbing speed at FTP: roughly (FTP in W) / (total resistance)
-                # Simple estimate: at 8% gradient, ~10km/h = 1.67 m/s at FTP
                 speed_mps = max(1.0, 1.67 * (5.0 / max(avg_grad, 1.0)) ** 0.3)
                 est_duration_min = (length / speed_mps) / 60
 
@@ -124,6 +100,65 @@ def analyze_gpx(gpx_content: str) -> dict:
         "total_gain_m": round(total_gain),
         "gain_per_10km": round(total_gain / (total_distance / 10000)) if total_distance > 0 else 0,
     }
+
+
+def compute_segment_performance(points: list[dict], segments: list[dict]) -> list[dict]:
+    """
+    For each segment (has start_km, end_km), find all points within that km range
+    and compute avg_power_w, avg_hr_bpm, avg_speed_kmh.
+    Returns updated segments list.
+    """
+    result = []
+    for seg in segments:
+        seg_points = [
+            p for p in points
+            if p["dist_m"] / 1000 >= seg["start_km"] and p["dist_m"] / 1000 <= seg["end_km"]
+        ]
+        powers = [p["power"] for p in seg_points if p.get("power") is not None]
+        hrs = [p["hr"] for p in seg_points if p.get("hr") is not None]
+        speeds = [p["speed_ms"] for p in seg_points if p.get("speed_ms") is not None]
+
+        updated = dict(seg)
+        updated["avg_power_w"] = round(sum(powers) / len(powers)) if powers else None
+        updated["avg_hr_bpm"] = round(sum(hrs) / len(hrs)) if hrs else None
+        updated["avg_speed_kmh"] = round(sum(speeds) / len(speeds) * 3.6, 1) if speeds else None
+        result.append(updated)
+    return result
+
+
+def analyze_gpx(gpx_content: str) -> dict:
+    """
+    Parse GPX and extract elevation profile + climb segments.
+    Returns analysis dict suitable for storage in Route.analysis.
+    """
+    gpx = gpxpy.parse(gpx_content)
+
+    raw_points = []
+    for track in gpx.tracks:
+        for segment in track.segments:
+            for pt in segment.points:
+                if pt.latitude and pt.longitude:
+                    raw_points.append({
+                        "lat": pt.latitude,
+                        "lon": pt.longitude,
+                        "ele": pt.elevation or 0.0,
+                    })
+
+    if len(raw_points) < 2:
+        return {"segments": [], "terrain_type": "UNKNOWN", "error": "Insufficient GPS data"}
+
+    # Build points with cumulative dist_m for analyze_points
+    points = []
+    cumulative = 0.0
+    for i, pt in enumerate(raw_points):
+        if i > 0:
+            cumulative += _haversine(
+                raw_points[i - 1]["lat"], raw_points[i - 1]["lon"],
+                pt["lat"], pt["lon"]
+            )
+        points.append({**pt, "dist_m": cumulative})
+
+    return analyze_points(points)
 
 
 def categorize_climb(length_m: float, avg_gradient_pct: float) -> str:

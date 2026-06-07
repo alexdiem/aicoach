@@ -24,9 +24,9 @@ export default function RoutesPage() {
     e.preventDefault()
     setDragOver(false)
     const file = e.dataTransfer.files[0]
-    if (file?.name.endsWith('.gpx')) {
+    if (file?.name.match(/\.(gpx|fit)$/i)) {
       setPendingFile(file)
-      setUploadName(file.name.replace('.gpx', ''))
+      setUploadName(file.name.replace(/\.(gpx|fit)$/i, ''))
     }
   }
 
@@ -53,7 +53,7 @@ export default function RoutesPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-bold text-gray-900">Route Library</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Upload GPX files — routes are analysed for climbs and matched to planned intervals.</p>
+        <p className="text-sm text-gray-500 mt-0.5">Upload FIT or GPX activity files — routes are analysed for climbs and matched to planned intervals.</p>
       </div>
 
       {/* Upload zone */}
@@ -71,18 +71,18 @@ export default function RoutesPage() {
         <input
           ref={fileRef}
           type="file"
-          accept=".gpx"
+          accept=".fit,.gpx"
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0]
-            if (file) { setPendingFile(file); setUploadName(file.name.replace('.gpx', '')) }
+            if (file) { setPendingFile(file); setUploadName(file.name.replace(/\.(gpx|fit)$/i, '')) }
           }}
         />
         <div className="w-10 h-10 rounded-xl bg-gray-100 border border-gray-200 flex items-center justify-center mx-auto mb-3">
           <Upload size={18} className="text-gray-400" />
         </div>
-        <p className="text-gray-700 text-sm font-medium">Drop a GPX file here</p>
-        <p className="text-gray-400 text-xs mt-1">or click to browse</p>
+        <p className="text-gray-700 text-sm font-medium">Drop a FIT or GPX activity file here</p>
+        <p className="text-gray-400 text-xs mt-1">Exports from Garmin Connect, Strava, etc.</p>
       </div>
 
       {/* Pending upload */}
@@ -123,7 +123,12 @@ export default function RoutesPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {routes.map((r) => (
-            <RouteCard key={r.id} route={r} onDelete={handleDelete} />
+            <RouteCard
+              key={r.id}
+              route={r}
+              onDelete={handleDelete}
+              onUpdate={(updated) => setRoutes((prev) => prev.map((x) => x.id === updated.id ? updated : x))}
+            />
           ))}
         </div>
       )}

@@ -103,8 +103,16 @@ export async function uploadRoute(athleteId: number, name: string, file: File): 
   const form = new FormData()
   form.append('athlete_id', String(athleteId))
   form.append('name', name)
-  form.append('gpx_file', file)
+  form.append('activity_file', file)
   const r = await api.post('/routes/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+  return r.data
+}
+
+export async function setRouteRange(routeId: number, athleteId: number, startKm: number | null, endKm: number | null): Promise<Route> {
+  const params: any = { athlete_id: athleteId }
+  if (startKm !== null) params.start_km = startKm
+  if (endKm !== null) params.end_km = endKm
+  const r = await api.patch(`/routes/${routeId}/range`, null, { params })
   return r.data
 }
 
