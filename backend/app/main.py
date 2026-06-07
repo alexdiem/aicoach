@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -6,6 +7,8 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import Base, engine
+
+logger = logging.getLogger(__name__)
 from app.models import wellness as _wellness_model  # noqa: F401 — ensures table is registered
 from app.routers import activities, athlete, auth, garmin_webhook, plan, routes
 
@@ -27,8 +30,9 @@ async def lifespan(app: FastAPI):
         for sql in _MIGRATIONS:
             try:
                 await conn.execute(text(sql))
-            except Exception:
-                pass  # column already exists
+            except Exception as e:
+                if "duplicate column name" not in str(e).lower():
+                    logger.warning("Migration failed: %s — %s", sql, e)
     yield
 
 

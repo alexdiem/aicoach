@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { TrendingUp, TrendingDown, Minus, ChevronRight, Moon, Heart, Zap, Battery } from 'lucide-react'
 import clsx from 'clsx'
-import { getAthleteId, getActivities, getFitnessMetrics, getCurrentPlan, markWorkoutComplete } from '../api/client'
+import { getActivities, getFitnessMetrics, getCurrentPlan, markWorkoutComplete } from '../api/client'
+import { useAuth } from '../contexts/AuthContext'
 import FitnessChart from '../components/FitnessChart'
 import ActivityFeed from '../components/ActivityFeed'
 import TrainNow from '../components/TrainNow'
@@ -108,7 +109,8 @@ const TYPE_ABBREV: Record<string, string> = {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const athleteId = getAthleteId()!
+  const { athleteId: athleteIdOrNull } = useAuth()
+  const athleteId = athleteIdOrNull!
   const [fitness, setFitness] = useState<FitnessMetrics | null>(null)
   const [activities, setActivities] = useState<Activity[]>([])
   const [plan, setPlan] = useState<WeeklyPlan | null>(null)

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Upload, X } from 'lucide-react'
-import { getAthleteId, getRoutes, uploadRoute, deleteRoute } from '../api/client'
+import { getRoutes, uploadRoute, deleteRoute } from '../api/client'
 import RouteCard from '../components/RouteCard'
+import { useAuth } from '../contexts/AuthContext'
 import type { Route } from '../types'
 
 export default function RoutesPage() {
-  const athleteId = getAthleteId()!
+  const { athleteId: athleteIdOrNull } = useAuth()
+  const athleteId = athleteIdOrNull!
   const [routes, setRoutes] = useState<Route[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)

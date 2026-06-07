@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, RefreshCw } from 'lucide-react'
-import { getAthleteId, getAthlete, updateAthlete, syncActivities } from '../api/client'
+import { getAthlete, updateAthlete, syncActivities } from '../api/client'
+import { useAuth } from '../contexts/AuthContext'
 import type { Athlete } from '../types'
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -31,7 +32,8 @@ function Field({
 }
 
 export default function Settings() {
-  const athleteId = getAthleteId()!
+  const { athleteId: athleteIdOrNull } = useAuth()
+  const athleteId = athleteIdOrNull!
   const [athlete, setAthlete] = useState<Athlete | null>(null)
   const [ftp, setFtp] = useState('')
   const [lthr, setLthr] = useState('')

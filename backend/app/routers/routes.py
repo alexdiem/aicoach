@@ -3,11 +3,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.dependencies import verify_api_key
 from app.models.route import Route
 from app.services.activity_file_parser import parse_activity_file
 from app.services.terrain import analyze_gpx, analyze_points, compute_segment_performance
 
-router = APIRouter(prefix="/routes", tags=["routes"])
+router = APIRouter(prefix="/routes", tags=["routes"], dependencies=[Depends(verify_api_key)])
 
 
 @router.post("/upload")

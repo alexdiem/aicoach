@@ -15,6 +15,20 @@ export function setAthleteId(id: number) {
   sessionStorage.setItem('athlete_id', String(id))
 }
 
+export function getApiKey(): string | null {
+  return localStorage.getItem('api_key')
+}
+
+export function setApiKey(key: string): void {
+  localStorage.setItem('api_key', key)
+}
+
+api.interceptors.request.use((config) => {
+  const key = getApiKey()
+  if (key) config.headers.Authorization = `Bearer ${key}`
+  return config
+})
+
 export async function connectGarmin(): Promise<{ athlete_id: number; display_name: string }> {
   const r = await api.post('/auth/connect')
   return r.data

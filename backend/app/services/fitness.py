@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
     from app.models.activity import Activity
     from app.models.athlete import Athlete
 
@@ -213,6 +214,74 @@ def calculate_readiness(tsb: float, wellness_rows: list) -> dict:
         signals["resting_hr"] = rhr_row.resting_heart_rate
 
     return {"score": score, "zone": zone, "guidance": guidance, "signals": signals}
+
+
+async def get_fitness_snapshot(
+    athlete_id: int,
+    db: "AsyncSession",
+    include_readiness: bool = False,
+    include_wellness: bool = False,
+) -> dict:
+    """Return {ctl, atl, tsb, readiness?, recent_wellness?} for an athlete."""
+    from datetime import date, timedelta
+    from sqlalchemy import select, desc
+    from app.models.activity import Activity
+    from app.models.athlete import Athlete
+    from app.models.wellness import DailyWellness
+
+    cutoff = date.today() - timedelta(days=180)
+    athlete_result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
+    athlete = athlete_result.scalar_one_or_none()
+
+    acts_result = await db.execute(
+        select(Activity)
+        .where(Activity.athlete_id == athlete_id, Activity.start_time >= cutoff)
+        .order_by(Activity.start_time)
+    )
+    activities = list(acts_result.scalars().all())
+
+    daily_loads = calculate_daily_loads(activities, athlete)
+    series = calculate_ctl_atl_tsb(daily_loads)
+    latest = series[-1] if series else {"ctl": 0, "atl": 0, "tsb": 0}
+
+    result: dict = {
+        "ctl": latest["ctl"],
+        "atl": latest["atl"],
+        "tsb": latest["tsb"],
+        "_activities": activities,
+        "_series": series,
+    }
+
+    if include_readiness or include_wellness:
+        wellness_result = await db.execute(
+            select(DailyWellness)
+            .where(
+                DailyWellness.athlete_id == athlete_id,
+                DailyWellness.date >= date.today() - timedelta(days=7),
+            )
+            .order_by(desc(DailyWellness.date))
+        )
+        wellness_rows = list(wellness_result.scalars().all())
+
+        if include_readiness:
+            result["readiness"] = calculate_readiness(latest["tsb"], wellness_rows)
+
+        if include_wellness:
+            result["recent_wellness"] = [
+                {
+                    "date": w.date.isoformat(),
+                    "body_battery_max": w.body_battery_max,
+                    "hrv_status": w.hrv_status,
+                    "hrv_last_night_avg": w.hrv_last_night_avg,
+                    "sleep_score": w.sleep_score,
+                    "sleep_hours": round(w.sleep_duration_seconds / 3600, 1) if w.sleep_duration_seconds else None,
+                    "resting_hr": w.resting_heart_rate,
+                    "avg_stress": w.avg_stress_level,
+                }
+                for w in wellness_rows
+            ]
+
+    return result
 
 
 def estimate_vo2max_trend(activities: list["Activity"], sport: str) -> list[dict]:

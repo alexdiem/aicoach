@@ -7,20 +7,19 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.dependencies import get_athlete_or_404
+from app.dependencies import get_athlete_or_404, verify_api_key
 from app.models.activity import Activity
 from app.models.athlete import Athlete
 from app.models.plan import PlannedWorkout, WeeklyPlan
 from app.models.route import Route
 from app.services import ai_coach
-from app.services.fitness import calculate_ctl_atl_tsb, calculate_daily_loads, calculate_readiness
+from app.services.fitness import get_fitness_snapshot
 from app.services.fit_export import session_to_fit
 from app.services.plan_generator import generate_weekly_plan_data, VALID_SPORTS
 from app.services.season_detector import detect_season
 from app.services.workout_builder import build_structured_session
-from app.models.wellness import DailyWellness
 
-router = APIRouter(prefix="/plan", tags=["plan"])
+router = APIRouter(prefix="/plan", tags=["plan"], dependencies=[Depends(verify_api_key)])
 
 
 class DayPreference(BaseModel):
@@ -98,27 +97,9 @@ async def train_now(
     """Generate an on-demand structured session based on current fitness and readiness."""
     athlete_id = athlete.id
 
-    cutoff = date.today() - timedelta(days=90)
-    acts_result = await db.execute(
-        select(Activity)
-        .where(Activity.athlete_id == athlete_id, Activity.start_time >= cutoff)
-        .order_by(Activity.start_time)
-    )
-    activities = list(acts_result.scalars().all())
-    daily_loads = calculate_daily_loads(activities, athlete)
-    series = calculate_ctl_atl_tsb(daily_loads)
-    latest = series[-1] if series else {"ctl": 0, "atl": 0, "tsb": 0}
-
-    wellness_result = await db.execute(
-        select(DailyWellness)
-        .where(
-            DailyWellness.athlete_id == athlete_id,
-            DailyWellness.date >= date.today() - timedelta(days=7),
-        )
-        .order_by(DailyWellness.date.desc())
-    )
-    wellness_rows = list(wellness_result.scalars().all())
-    readiness = calculate_readiness(latest["tsb"], wellness_rows)
+    snapshot = await get_fitness_snapshot(athlete_id, db, include_readiness=True)
+    latest = {"ctl": snapshot["ctl"], "atl": snapshot["atl"], "tsb": snapshot["tsb"]}
+    readiness = snapshot["readiness"]
 
     # Resolve duration
     if body.duration_minutes:
@@ -169,18 +150,9 @@ async def generate_plan(
         body = GeneratePlanRequest()
     athlete_id = athlete.id
 
-    cutoff = date.today() - timedelta(days=90)
-    acts_result = await db.execute(
-        select(Activity)
-        .where(Activity.athlete_id == athlete_id, Activity.start_time >= cutoff)
-        .order_by(Activity.start_time)
-    )
-    activities = list(acts_result.scalars().all())
-
-    daily_loads = calculate_daily_loads(activities, athlete)
-    fitness_series = calculate_ctl_atl_tsb(daily_loads)
-    latest = fitness_series[-1] if fitness_series else {"ctl": 0, "atl": 0, "tsb": 0}
-    ctl, atl, tsb = latest["ctl"], latest["atl"], latest["tsb"]
+    snapshot = await get_fitness_snapshot(athlete_id, db)
+    ctl, atl, tsb = snapshot["ctl"], snapshot["atl"], snapshot["tsb"]
+    activities = snapshot["_activities"]
 
     season, confidence = detect_season(activities)
 

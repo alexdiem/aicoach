@@ -10,11 +10,12 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.dependencies import verify_api_key
 from app.models.activity import Activity
 from app.models.wellness import DailyWellness
 from app.services.garmin import get_garmin_client, parse_garmin_activity, parse_wellness
 
-router = APIRouter(prefix="/activities", tags=["activities"])
+router = APIRouter(prefix="/activities", tags=["activities"], dependencies=[Depends(verify_api_key)])
 
 _WELLNESS_WINDOW = 14  # days of wellness to sync regardless of days_back
 
@@ -36,18 +37,27 @@ async def sync_activities(
         logger.exception("Garmin activity fetch failed")
         raise HTTPException(status_code=502, detail=f"Garmin fetch failed: {type(e).__name__}: {e}")
 
+    # Pre-load all existing garmin_activity_ids for this athlete in one query
+    existing_ids_result = await db.execute(
+        select(Activity.garmin_activity_id).where(
+            Activity.athlete_id == athlete_id,
+            Activity.garmin_activity_id.isnot(None),
+        )
+    )
+    existing_garmin_ids: set[str] = {row[0] for row in existing_ids_result.all()}
+
     new_count = 0
     for raw in raw_activities:
         try:
             parsed = parse_garmin_activity(raw)
             garmin_id = parsed.get("garmin_activity_id")
-            if garmin_id:
-                existing = await db.execute(select(Activity).where(Activity.garmin_activity_id == garmin_id))
-                if existing.scalar_one_or_none():
-                    continue
+            if garmin_id and garmin_id in existing_garmin_ids:
+                continue
 
             activity = Activity(athlete_id=athlete_id, **{k: v for k, v in parsed.items()})
             db.add(activity)
+            if garmin_id:
+                existing_garmin_ids.add(garmin_id)
             new_count += 1
         except Exception:
             logger.exception("Failed to parse/save activity (skipped): %s", raw.get("activityId"))
@@ -55,6 +65,18 @@ async def sync_activities(
     # Sync wellness for the recent window (concurrent fetches per day)
     wellness_start = end - timedelta(days=_WELLNESS_WINDOW - 1)
     wellness_dates = [wellness_start + timedelta(days=i) for i in range(_WELLNESS_WINDOW)]
+
+    # Pre-load existing wellness rows for the sync window in one query
+    existing_wellness_result = await db.execute(
+        select(DailyWellness).where(
+            DailyWellness.athlete_id == athlete_id,
+            DailyWellness.date >= wellness_start,
+            DailyWellness.date <= end,
+        )
+    )
+    existing_wellness_map: dict[date, DailyWellness] = {
+        row.date: row for row in existing_wellness_result.scalars().all()
+    }
 
     async def _fetch_day(d: date):
         results = await asyncio.gather(
@@ -76,16 +98,11 @@ async def sync_activities(
             parsed_w = parse_wellness(stats, hrv, sleep, bb)
             if not any(v is not None for v in parsed_w.values()):
                 continue
-            existing = await db.execute(
-                select(DailyWellness).where(
-                    DailyWellness.athlete_id == athlete_id,
-                    DailyWellness.date == d,
-                )
-            )
-            row = existing.scalar_one_or_none()
+            row = existing_wellness_map.get(d)
             if row is None:
                 row = DailyWellness(athlete_id=athlete_id, date=d)
                 db.add(row)
+                existing_wellness_map[d] = row
             for k, v in parsed_w.items():
                 if v is not None:
                     setattr(row, k, v)

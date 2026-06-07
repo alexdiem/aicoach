@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     GARMIN_EMAIL: str = ""
     GARMIN_PASSWORD: str = ""
     ANTHROPIC_API_KEY: str = ""
-    SECRET_KEY: str = "change-me-in-production"
+    APP_SECRET: str
     FRONTEND_URL: str = "http://localhost:5173"
 
 

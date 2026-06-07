@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { RefreshCw, CalendarDays, ChevronDown, ChevronRight, Download } from 'lucide-react'
 import clsx from 'clsx'
 import {
-  getAthleteId,
   getCurrentPlan,
   generatePlan,
   markWorkoutComplete,
@@ -12,6 +11,7 @@ import {
   getRoutes,
 } from '../api/client'
 import SchedulePicker, { toApiSchedule } from '../components/SchedulePicker'
+import { useAuth } from '../contexts/AuthContext'
 import type { PlannedWorkout, Route, SessionInterval, StructuredSession, WeeklyPlan } from '../types'
 
 const PHASE_STYLES: Record<string, { text: string; bg: string; border: string }> = {
@@ -238,7 +238,8 @@ function SessionPlan({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function Plan() {
-  const athleteId = getAthleteId()!
+  const { athleteId: athleteIdOrNull } = useAuth()
+  const athleteId = athleteIdOrNull!
   const [plan, setPlan] = useState<WeeklyPlan | null>(null)
   const [routes, setRoutes] = useState<Route[]>([])
   const [loading, setLoading] = useState(true)
