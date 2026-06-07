@@ -68,8 +68,9 @@ export default function Settings() {
     try {
       const r = await syncActivities(athleteId, days)
       setSyncResult(`Synced ${r.synced} new activities.`)
-    } catch {
-      setSyncResult('Sync failed. Check your GARMIN_EMAIL and GARMIN_PASSWORD in backend/.env')
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Unknown error'
+      setSyncResult(`Sync failed: ${msg}`)
     } finally {
       setSyncing(false)
     }

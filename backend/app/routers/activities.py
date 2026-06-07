@@ -30,7 +30,9 @@ async def sync_activities(
     try:
         raw_activities = await garmin.get_activities(start, end)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Garmin fetch failed: {e}")
+        import logging
+        logging.getLogger(__name__).exception("Garmin sync failed")
+        raise HTTPException(status_code=502, detail=f"Garmin fetch failed: {type(e).__name__}: {e}")
 
     new_count = 0
     for raw in raw_activities:

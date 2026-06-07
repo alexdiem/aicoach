@@ -40,8 +40,13 @@ export async function getActivities(athleteId: number, limit = 20): Promise<Acti
 }
 
 export async function syncActivities(athleteId: number, daysBack = 30): Promise<{ synced: number }> {
-  const r = await api.post('/activities/sync', null, { params: { athlete_id: athleteId, days_back: daysBack } })
-  return r.data
+  try {
+    const r = await api.post('/activities/sync', null, { params: { athlete_id: athleteId, days_back: daysBack }, timeout: 120000 })
+    return r.data
+  } catch (e: any) {
+    const detail = e?.response?.data?.detail
+    throw new Error(detail ?? e?.message ?? 'Sync failed')
+  }
 }
 
 export async function getCurrentPlan(athleteId: number): Promise<WeeklyPlan | null> {
