@@ -8,7 +8,7 @@ const api = axios.create({
 
 export function getAthleteId(): number | null {
   const id = sessionStorage.getItem('athlete_id')
-  return id ? parseInt(id) : null
+  return id ? parseInt(id, 10) : null
 }
 
 export function setAthleteId(id: number) {
@@ -43,9 +43,12 @@ export async function syncActivities(athleteId: number, daysBack = 30): Promise<
   try {
     const r = await api.post('/activities/sync', null, { params: { athlete_id: athleteId, days_back: daysBack }, timeout: 120000 })
     return r.data
-  } catch (e: any) {
-    const detail = e?.response?.data?.detail
-    throw new Error(detail ?? e?.message ?? 'Sync failed')
+  } catch (e: unknown) {
+    if (axios.isAxiosError(e)) {
+      const detail = e.response?.data?.detail
+      throw new Error(detail ?? e.message ?? 'Sync failed')
+    }
+    throw new Error(e instanceof Error ? e.message : 'Sync failed')
   }
 }
 
@@ -109,7 +112,7 @@ export async function uploadRoute(athleteId: number, name: string, file: File): 
 }
 
 export async function setRouteRange(routeId: number, athleteId: number, startKm: number | null, endKm: number | null): Promise<Route> {
-  const params: any = { athlete_id: athleteId }
+  const params: { athlete_id: number; start_km?: number | null; end_km?: number | null } = { athlete_id: athleteId }
   if (startKm !== null) params.start_km = startKm
   if (endKm !== null) params.end_km = endKm
   const r = await api.patch(`/routes/${routeId}/range`, null, { params })

@@ -54,11 +54,11 @@ export default function SchedulePicker({ schedule, onChange }: Props) {
                 value={current ?? ''}
                 onChange={(e) => setDay(dow, e.target.value === '' ? null : e.target.value)}
                 className={clsx(
-                  'w-full appearance-none rounded-lg border px-1.5 py-1.5 text-xs font-medium cursor-pointer transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500 text-center',
+                  'w-full appearance-none rounded-lg border px-1.5 py-1.5 text-xs font-medium cursor-pointer transition-colors focus:outline-none focus:ring-1 focus:ring-indigo-500 text-center',
                   isRest
                     ? 'bg-gray-100 border-gray-200 text-gray-300'
                     : hasSport
-                      ? 'bg-blue-950/40 border-blue-800 text-blue-300'
+                      ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
                       : 'bg-white border-gray-200 text-gray-500',
                 )}
               >

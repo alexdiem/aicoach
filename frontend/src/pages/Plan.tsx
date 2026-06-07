@@ -15,10 +15,10 @@ import SchedulePicker, { toApiSchedule } from '../components/SchedulePicker'
 import type { PlannedWorkout, Route, SessionInterval, StructuredSession, WeeklyPlan } from '../types'
 
 const PHASE_STYLES: Record<string, { text: string; bg: string; border: string }> = {
-  BASE:     { text: 'text-blue-400',    bg: 'bg-blue-950/50',    border: 'border-blue-900' },
-  BUILD:    { text: 'text-orange-400',  bg: 'bg-orange-950/50',  border: 'border-orange-900' },
-  PEAK:     { text: 'text-rose-400',    bg: 'bg-rose-950/50',    border: 'border-rose-900' },
-  RECOVERY: { text: 'text-emerald-400', bg: 'bg-emerald-950/50', border: 'border-emerald-900' },
+  BASE:     { text: 'text-blue-700',    bg: 'bg-blue-100',    border: 'border-blue-200' },
+  BUILD:    { text: 'text-orange-700',  bg: 'bg-orange-100',  border: 'border-orange-200' },
+  PEAK:     { text: 'text-rose-700',    bg: 'bg-rose-100',    border: 'border-rose-200' },
+  RECOVERY: { text: 'text-emerald-700', bg: 'bg-emerald-100', border: 'border-emerald-200' },
 }
 
 const SPORT_ICONS: Record<string, string> = {
@@ -26,13 +26,13 @@ const SPORT_ICONS: Record<string, string> = {
 }
 
 const TYPE_STYLES: Record<string, { dot: string; badge: string }> = {
-  EASY:      { dot: 'bg-emerald-500', badge: 'text-emerald-400 bg-emerald-950/60 border-emerald-900' },
-  RECOVERY:  { dot: 'bg-gray-300',    badge: 'text-gray-500 bg-gray-100 border-gray-200' },
-  TEMPO:     { dot: 'bg-yellow-500',  badge: 'text-yellow-400 bg-yellow-950/60 border-yellow-900' },
-  THRESHOLD: { dot: 'bg-orange-500',  badge: 'text-orange-400 bg-orange-950/60 border-orange-900' },
-  VO2MAX:    { dot: 'bg-rose-500',    badge: 'text-rose-400 bg-rose-950/60 border-rose-900' },
-  LONG:      { dot: 'bg-blue-500',    badge: 'text-blue-400 bg-blue-950/60 border-blue-900' },
-  STRENGTH:  { dot: 'bg-violet-500',  badge: 'text-violet-400 bg-violet-950/60 border-violet-900' },
+  EASY:      { dot: 'bg-emerald-500', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  RECOVERY:  { dot: 'bg-gray-400',    badge: 'bg-gray-100 text-gray-500 border-gray-200' },
+  TEMPO:     { dot: 'bg-yellow-500',  badge: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+  THRESHOLD: { dot: 'bg-orange-500',  badge: 'bg-orange-100 text-orange-700 border-orange-200' },
+  VO2MAX:    { dot: 'bg-rose-500',    badge: 'bg-rose-100 text-rose-700 border-rose-200' },
+  LONG:      { dot: 'bg-blue-500',    badge: 'bg-blue-100 text-blue-700 border-blue-200' },
+  STRENGTH:  { dot: 'bg-violet-500',  badge: 'bg-violet-100 text-violet-700 border-violet-200' },
 }
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -61,7 +61,7 @@ function IntervalStep({ step }: { step: SessionInterval }) {
           {isRest && <span className="text-xs font-semibold text-gray-400">Rest</span>}
           <span className="text-xs text-gray-400">{step.duration_minutes}min</span>
           {step.target && !isRest && (
-            <span className="text-xs font-mono text-blue-400">{step.target}</span>
+            <span className="text-xs font-mono text-indigo-600">{step.target}</span>
           )}
         </div>
         <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{step.notes}</p>
@@ -141,7 +141,7 @@ function SessionPlan({
           <select
             value={selectedRouteId}
             onChange={(e) => setSelectedRouteId(e.target.value)}
-            className="bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+            className="bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
           >
             <option value="">No route (indoor / unspecified)</option>
             {routes.map((r) => (
@@ -153,7 +153,7 @@ function SessionPlan({
           <button
             onClick={handleApplyRoute}
             disabled={rebuilding}
-            className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 border border-blue-900/60 hover:border-blue-700 px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-50"
+            className="flex items-center gap-1.5 text-xs text-indigo-600 border border-indigo-200 hover:border-indigo-400 px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-50"
           >
             <RefreshCw size={11} className={rebuilding ? 'animate-spin' : ''} />
             {rebuilding ? 'Updating…' : 'Apply route'}
@@ -164,7 +164,7 @@ function SessionPlan({
         </div>
       )}
       {rebuildError && (
-        <p className="text-xs text-red-400 mb-3">{rebuildError}</p>
+        <p className="text-xs text-rose-700 mb-3">{rebuildError}</p>
       )}
 
       {/* Garmin download */}
@@ -172,7 +172,7 @@ function SessionPlan({
         <button
           onClick={handleDownloadFit}
           disabled={downloading}
-          className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 border border-emerald-900/60 hover:border-emerald-700 px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-50"
+          className="flex items-center gap-1.5 text-xs text-emerald-600 border border-emerald-200 hover:border-emerald-400 px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-50"
         >
           <Download size={11} className={downloading ? 'animate-bounce' : ''} />
           {downloading ? 'Generating…' : 'Download for Garmin (.fit)'}
@@ -348,10 +348,10 @@ export default function Plan() {
             <div className="flex gap-2 flex-wrap">
               {[
                 { value: 'AUTO',     label: 'Auto-detect',  style: null },
-                { value: 'BASE',     label: 'Base',         style: 'border-blue-700 text-blue-300 bg-blue-950/40' },
-                { value: 'BUILD',    label: 'Build',        style: 'border-orange-700 text-orange-300 bg-orange-950/40' },
-                { value: 'PEAK',     label: 'Peak',         style: 'border-rose-700 text-rose-300 bg-rose-950/40' },
-                { value: 'RECOVERY', label: 'Recovery',     style: 'border-emerald-700 text-emerald-300 bg-emerald-950/40' },
+                { value: 'BASE',     label: 'Base',         style: 'border-blue-200 text-blue-700 bg-blue-50' },
+                { value: 'BUILD',    label: 'Build',        style: 'border-orange-200 text-orange-700 bg-orange-50' },
+                { value: 'PEAK',     label: 'Peak',         style: 'border-rose-200 text-rose-700 bg-rose-50' },
+                { value: 'RECOVERY', label: 'Recovery',     style: 'border-emerald-200 text-emerald-700 bg-emerald-50' },
               ].map((opt) => (
                 <button
                   key={opt.value}
@@ -373,7 +373,7 @@ export default function Plan() {
             <button
               onClick={handleGenerate}
               disabled={generating}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
             >
               <RefreshCw size={13} className={generating ? 'animate-spin' : ''} />
               {generating ? 'Generating…' : plan ? 'Regenerate' : 'Generate plan'}
@@ -394,7 +394,7 @@ export default function Plan() {
           <button
             onClick={handleGenerate}
             disabled={generating}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
           >
             <RefreshCw size={13} className={generating ? 'animate-spin' : ''} />
             {generating ? 'Generating…' : plan ? 'Regenerate plan' : 'Generate plan'}
@@ -404,7 +404,7 @@ export default function Plan() {
             <select
               value={phaseOverride}
               onChange={(e) => setPhaseOverride(e.target.value)}
-              className="bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+              className="bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
             >
               <option value="AUTO">Auto-detect</option>
               <option value="BASE">Base</option>
@@ -417,7 +417,7 @@ export default function Plan() {
       )}
 
       {error && (
-        <div className="bg-red-950/60 border border-red-800 rounded-xl p-4 text-red-300 text-sm">{error}</div>
+        <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-rose-700 text-sm">{error}</div>
       )}
 
       {plan?.narrative && (
@@ -454,7 +454,7 @@ export default function Plan() {
                           <span className="text-gray-400 font-normal"> · {w.sport.replace('_', ' ')}</span>
                         </span>
                         {w.is_unstructured ? (
-                          <span className="text-xs px-2 py-0.5 rounded-full border border-yellow-800/60 text-yellow-400 bg-yellow-950/40 font-medium">
+                          <span className="text-xs px-2 py-0.5 rounded-full border border-amber-200 text-amber-600 bg-amber-50 font-medium">
                             free ride
                           </span>
                         ) : (
@@ -499,7 +499,7 @@ export default function Plan() {
                       {w.compliance_score !== null && (
                         <span className={clsx(
                           'text-sm font-bold tabular-nums',
-                          w.compliance_score >= 80 ? 'text-emerald-400' : w.compliance_score >= 60 ? 'text-yellow-400' : 'text-rose-400'
+                          w.compliance_score >= 80 ? 'text-emerald-600' : w.compliance_score >= 60 ? 'text-yellow-600' : 'text-rose-600'
                         )}>
                           {w.compliance_score}%
                         </span>
@@ -510,7 +510,7 @@ export default function Plan() {
                           className={clsx(
                             'text-xs px-2.5 py-1 rounded-lg border transition-all',
                             w.is_unstructured
-                              ? 'text-yellow-400 border-yellow-800/60 hover:border-yellow-600'
+                              ? 'text-amber-600 border-amber-200 hover:border-amber-400'
                               : 'text-gray-400 border-gray-200 hover:text-gray-700 hover:border-gray-400',
                           )}
                         >
@@ -518,11 +518,11 @@ export default function Plan() {
                         </button>
                       )}
                       {w.is_completed ? (
-                        <span className="text-emerald-400 text-sm font-medium">✓ Done</span>
+                        <span className="text-emerald-600 text-sm font-medium">✓ Done</span>
                       ) : (
                         <button
                           onClick={() => handleMarkComplete(w)}
-                          className="text-xs text-blue-400 hover:text-blue-300 border border-blue-900/60 hover:border-blue-700 px-2.5 py-1 rounded-lg transition-all"
+                          className="text-xs text-indigo-600 border border-indigo-200 hover:border-indigo-400 px-2.5 py-1 rounded-lg transition-all"
                         >
                           Mark done
                         </button>

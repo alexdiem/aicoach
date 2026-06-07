@@ -60,7 +60,7 @@ export default function RoutesPage() {
       <div
         className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all cursor-pointer ${
           dragOver
-            ? 'border-blue-400 bg-blue-50'
+            ? 'border-indigo-400 bg-indigo-50'
             : 'border-gray-200 hover:border-gray-400'
         }`}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
@@ -100,13 +100,14 @@ export default function RoutesPage() {
           <button
             onClick={handleUpload}
             disabled={uploading || !uploadName.trim()}
-            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors shrink-0"
+            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors shrink-0"
           >
             {uploading ? 'Analysing…' : 'Upload'}
           </button>
           <button
             onClick={() => setPendingFile(null)}
-            className="text-gray-400 hover:text-gray-700 transition-colors p-1"
+            aria-label="Cancel upload"
+            className="text-gray-400 hover:text-gray-700 transition-colors p-2"
           >
             <X size={16} />
           </button>

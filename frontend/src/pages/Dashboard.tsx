@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { TrendingUp, TrendingDown, Minus, ChevronRight, Moon, Heart, Zap, Battery } from 'lucide-react'
 import clsx from 'clsx'
 import { getAthleteId, getActivities, getFitnessMetrics, getCurrentPlan, markWorkoutComplete } from '../api/client'
@@ -149,18 +150,10 @@ export default function Dashboard() {
   const tsbPositive = current.tsb >= 0
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
-        gridTemplateRows: 'auto',
-        gap: '12px',
-      }}
-    >
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
       {/* ── READINESS tile — col 1-2, row 1 ─────────────────────────── */}
       <div
-        className="rounded-2xl p-5 border border-gray-200 bg-gray-50"
-        style={{ gridColumn: '1 / 3', gridRow: '1' }}
+        className="rounded-2xl p-5 border border-gray-200 bg-gray-50 lg:col-span-2"
       >
         <TileLabel color="#4338CA">Readiness</TileLabel>
 
@@ -226,7 +219,6 @@ export default function Dashboard() {
       {/* ── TODAY'S WORKOUT tile — col 3, row 1 ──────────────────────── */}
       <div
         className="rounded-2xl p-5 border border-violet-100 bg-violet-50"
-        style={{ gridColumn: '3', gridRow: '1' }}
       >
         <TileLabel color="#7C3AED">Today's Workout</TileLabel>
 
@@ -253,17 +245,16 @@ export default function Dashboard() {
         ) : (
           <div className="flex flex-col gap-2">
             <p className="text-sm text-gray-500">No plan yet.</p>
-            <a href="/plan" className="inline-flex items-center gap-1 text-xs text-violet-600 hover:text-violet-800 font-medium transition-colors">
+            <Link to="/plan" className="inline-flex items-center gap-1 text-xs text-violet-600 hover:text-violet-800 font-medium transition-colors">
               Generate a plan <ChevronRight size={12} />
-            </a>
+            </Link>
           </div>
         )}
       </div>
 
       {/* ── TRAIN NOW tile — col 4, rows 1-2 ─────────────────────────── */}
       <div
-        className="rounded-2xl border border-indigo-100 bg-indigo-50 overflow-hidden"
-        style={{ gridColumn: '4', gridRow: '1 / 3' }}
+        className="rounded-2xl border border-indigo-100 bg-indigo-50 overflow-hidden lg:row-span-2"
       >
         <TrainNow athleteId={athleteId} />
       </div>
@@ -271,7 +262,6 @@ export default function Dashboard() {
       {/* ── CTL tile — col 1, row 2 ───────────────────────────────────── */}
       <div
         className="rounded-2xl p-5 border border-blue-100 bg-blue-50"
-        style={{ gridColumn: '1', gridRow: '2' }}
       >
         <TileLabel color="#2563EB">Fitness · CTL</TileLabel>
         <div className="flex items-end gap-2 mb-1">
@@ -288,7 +278,6 @@ export default function Dashboard() {
       {/* ── ATL tile — col 2, row 2 ───────────────────────────────────── */}
       <div
         className="rounded-2xl p-5 border border-rose-100 bg-rose-50"
-        style={{ gridColumn: '2', gridRow: '2' }}
       >
         <TileLabel color="#DC2626">Fatigue · ATL</TileLabel>
         <div className="flex items-end gap-2 mb-1">
@@ -308,7 +297,6 @@ export default function Dashboard() {
           'rounded-2xl p-5 border',
           tsbPositive ? 'border-emerald-100 bg-emerald-50' : 'border-amber-100 bg-amber-50',
         )}
-        style={{ gridColumn: '3', gridRow: '2' }}
       >
         <TileLabel color={tsbPositive ? '#059669' : '#D97706'}>Form · TSB</TileLabel>
         <div className="flex items-end gap-2 mb-1">
@@ -327,8 +315,7 @@ export default function Dashboard() {
 
       {/* ── CHART + THIS WEEK — cols 1-3, rows 3-4 ──────────────────── */}
       <div
-        className="flex flex-col gap-3"
-        style={{ gridColumn: '1 / 4', gridRow: '3 / 5' }}
+        className="flex flex-col gap-3 lg:col-span-3 lg:row-span-2"
       >
         {/* Chart */}
         <div className="rounded-2xl p-5 border border-gray-200 bg-white">
@@ -343,12 +330,12 @@ export default function Dashboard() {
         <div className="rounded-2xl p-5 border border-gray-200 bg-white">
           <div className="flex items-center justify-between mb-3">
             <TileLabel color="#374151">This Week</TileLabel>
-            <a
-              href="/plan"
+            <Link
+              to="/plan"
               className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors"
             >
               Full plan <ChevronRight size={12} />
-            </a>
+            </Link>
           </div>
 
           {plan ? (
@@ -390,12 +377,12 @@ export default function Dashboard() {
           ) : (
             <div className="text-center py-6">
               <p className="text-gray-400 text-sm mb-2">No plan for this week yet.</p>
-              <a
-                href="/plan"
+              <Link
+                to="/plan"
                 className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 text-sm font-medium transition-colors"
               >
                 Generate this week's plan <ChevronRight size={14} />
-              </a>
+              </Link>
             </div>
           )}
         </div>
@@ -403,8 +390,7 @@ export default function Dashboard() {
 
       {/* ── ACTIVITIES tile — col 4, rows 3-4 ────────────────────────── */}
       <div
-        className="rounded-2xl p-5 border border-gray-200 bg-white overflow-hidden flex flex-col"
-        style={{ gridColumn: '4', gridRow: '3 / 5' }}
+        className="rounded-2xl p-5 border border-gray-200 bg-white overflow-hidden flex flex-col lg:row-span-2"
       >
         <TileLabel color="#374151">Activities</TileLabel>
         <div className="flex-1 overflow-y-auto">

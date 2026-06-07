@@ -92,7 +92,15 @@ export interface Route {
   created_at: string
   start_km?: number | null
   end_km?: number | null
-  performance_profile?: any
+  performance_profile?: {
+    segments_with_perf?: Array<{
+      start_km: number
+      end_km: number
+      avg_power_w?: number | null
+      avg_hr_bpm?: number | null
+      avg_speed_kmh?: number | null
+    }>
+  }
   source_file_type?: string | null
 }
 

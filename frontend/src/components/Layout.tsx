@@ -21,7 +21,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen flex bg-white">
-      <nav className="w-52 shrink-0 bg-white border-r border-gray-200 flex flex-col p-3">
+      <nav className="w-52 shrink-0 bg-white border-r border-gray-200 hidden md:flex flex-col p-3">
         <div className="px-3 py-4 mb-2">
           <span className="text-lg font-bold tracking-tight text-gray-950">ai<span className="text-indigo-600">coach</span></span>
         </div>
@@ -56,6 +56,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               <button
                 key={m}
                 onClick={() => toggleModel(m)}
+                aria-pressed={model === m}
                 className={clsx(
                   'flex-1 py-1.5 transition-colors capitalize',
                   model === m
@@ -72,9 +73,35 @@ export default function Layout({ children }: { children: ReactNode }) {
           </p>
         </div>
       </nav>
-      <main className="flex-1 overflow-auto bg-white">
-        <div className="max-w-6xl mx-auto px-6 py-8">{children}</div>
-      </main>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Mobile top bar */}
+        <header className="md:hidden flex items-center justify-between border-b border-gray-200 px-4 py-3 bg-white">
+          <span className="text-lg font-bold tracking-tight text-gray-950">ai<span className="text-indigo-600">coach</span></span>
+          <nav className="flex items-center gap-1">
+            {nav.map(({ to, label, icon: Icon }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === '/'}
+                aria-label={label}
+                className={({ isActive }: { isActive: boolean }) =>
+                  clsx(
+                    'p-2 rounded-lg transition-colors',
+                    isActive
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50',
+                  )
+                }
+              >
+                <Icon size={18} strokeWidth={1.75} />
+              </NavLink>
+            ))}
+          </nav>
+        </header>
+        <main className="flex-1 overflow-auto bg-white">
+          <div className="max-w-6xl mx-auto px-6 py-8">{children}</div>
+        </main>
+      </div>
     </div>
   )
 }

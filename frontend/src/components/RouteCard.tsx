@@ -4,11 +4,11 @@ import type { Route } from '../types'
 import { getAthleteId, setRouteRange } from '../api/client'
 
 const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
-  SHORT_PUNCH:  { label: 'Short punch',  color: 'text-rose-400' },
-  MEDIUM_CLIMB: { label: 'Medium climb', color: 'text-orange-400' },
-  LONG_CLIMB:   { label: 'Long climb',   color: 'text-amber-400' },
-  ROLLING:      { label: 'Rolling',      color: 'text-blue-400' },
-  FLAT:         { label: 'Flat',         color: 'text-gray-400' },
+  SHORT_PUNCH:  { label: 'Short punch',  color: 'text-rose-600' },
+  MEDIUM_CLIMB: { label: 'Medium climb', color: 'text-orange-600' },
+  LONG_CLIMB:   { label: 'Long climb',   color: 'text-amber-600' },
+  ROLLING:      { label: 'Rolling',      color: 'text-blue-600' },
+  FLAT:         { label: 'Flat',         color: 'text-gray-600' },
 }
 
 interface Props {
@@ -68,8 +68,9 @@ export default function RouteCard({ route, onDelete, onUpdate }: Props) {
         {onDelete && (
           <button
             onClick={() => onDelete(route.id)}
-            className="text-gray-400 hover:text-rose-500 transition-colors p-1 shrink-0"
+            className="text-gray-400 hover:text-rose-500 transition-colors p-2 shrink-0"
             title="Delete route"
+            aria-label="Delete route"
           >
             <Trash2 size={14} />
           </button>

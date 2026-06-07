@@ -123,7 +123,7 @@ export default function Settings() {
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-500 transition-shadow"
+              className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm w-full focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-shadow"
             />
           </Field>
           <Field
@@ -135,7 +135,7 @@ export default function Settings() {
               onChange={(e) => setFtp(e.target.value)}
               type="number"
               placeholder="e.g. 260"
-              className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm w-36 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-shadow"
+              className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm w-36 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-shadow"
             />
           </Field>
           <Field
@@ -147,13 +147,13 @@ export default function Settings() {
               onChange={(e) => setLthr(e.target.value)}
               type="number"
               placeholder="e.g. 162"
-              className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm w-36 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-shadow"
+              className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm w-36 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-shadow"
             />
           </Field>
           <button
             onClick={handleSave}
             disabled={saving}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-semibold w-fit transition-colors"
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-semibold w-fit transition-colors"
           >
             {saved ? (
               <><CheckCircle2 size={13} /> Saved</>
