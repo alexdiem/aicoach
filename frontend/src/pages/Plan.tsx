@@ -27,7 +27,7 @@ const SPORT_ICONS: Record<string, string> = {
 
 const TYPE_STYLES: Record<string, { dot: string; badge: string }> = {
   EASY:      { dot: 'bg-emerald-500', badge: 'text-emerald-400 bg-emerald-950/60 border-emerald-900' },
-  RECOVERY:  { dot: 'bg-zinc-500',    badge: 'text-zinc-400 bg-zinc-800 border-zinc-700' },
+  RECOVERY:  { dot: 'bg-gray-300',    badge: 'text-gray-500 bg-gray-100 border-gray-200' },
   TEMPO:     { dot: 'bg-yellow-500',  badge: 'text-yellow-400 bg-yellow-950/60 border-yellow-900' },
   THRESHOLD: { dot: 'bg-orange-500',  badge: 'text-orange-400 bg-orange-950/60 border-orange-900' },
   VO2MAX:    { dot: 'bg-rose-500',    badge: 'text-rose-400 bg-rose-950/60 border-rose-900' },
@@ -48,25 +48,25 @@ function IntervalStep({ step }: { step: SessionInterval }) {
   return (
     <div className={clsx('flex gap-3', isRest && 'opacity-60')}>
       <div className="flex flex-col items-center gap-1 pt-0.5 shrink-0">
-        <div className={clsx('w-2 h-2 rounded-full shrink-0', isRest ? 'bg-zinc-600' : 'bg-blue-500')} />
-        <div className="w-px flex-1 bg-zinc-800" />
+        <div className={clsx('w-2 h-2 rounded-full shrink-0', isRest ? 'bg-gray-300' : 'bg-blue-500')} />
+        <div className="w-px flex-1 bg-gray-200" />
       </div>
       <div className="pb-3 min-w-0">
         <div className="flex items-baseline gap-2 flex-wrap">
           {!isRest && step.rep !== undefined && (
-            <span className="text-xs font-semibold text-zinc-300">
+            <span className="text-xs font-semibold text-gray-700">
               Rep {step.rep}/{step.total_reps}
             </span>
           )}
-          {isRest && <span className="text-xs font-semibold text-zinc-500">Rest</span>}
-          <span className="text-xs text-zinc-500">{step.duration_minutes}min</span>
+          {isRest && <span className="text-xs font-semibold text-gray-400">Rest</span>}
+          <span className="text-xs text-gray-400">{step.duration_minutes}min</span>
           {step.target && !isRest && (
             <span className="text-xs font-mono text-blue-400">{step.target}</span>
           )}
         </div>
-        <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">{step.notes}</p>
+        <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{step.notes}</p>
         {step.segment && (
-          <p className="text-xs text-amber-400/80 mt-0.5">
+          <p className="text-xs text-amber-600 mt-0.5">
             ⛰ {step.segment.category.replace(/_/g, ' ').toLowerCase()} ·{' '}
             {step.segment.length_meters >= 1000
               ? `${(step.segment.length_meters / 1000).toFixed(1)}km`
@@ -133,15 +133,15 @@ function SessionPlan({
   const showRoutePicker = sport === 'CYCLING' && routes.length > 0
 
   return (
-    <div className="mt-4 pt-4 border-t border-zinc-800">
+    <div className="mt-4 pt-4 border-t border-gray-100">
       {/* Route picker */}
       {showRoutePicker && (
         <div className="flex items-center gap-2 mb-4 flex-wrap">
-          <span className="text-xs text-zinc-500 shrink-0">Route:</span>
+          <span className="text-xs text-gray-500 shrink-0">Route:</span>
           <select
             value={selectedRouteId}
             onChange={(e) => setSelectedRouteId(e.target.value)}
-            className="bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+            className="bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
           >
             <option value="">No route (indoor / unspecified)</option>
             {routes.map((r) => (
@@ -159,7 +159,7 @@ function SessionPlan({
             {rebuilding ? 'Updating…' : 'Apply route'}
           </button>
           {session.route_name && (
-            <span className="text-xs text-zinc-600 italic">Using: {session.route_name}</span>
+            <span className="text-xs text-gray-400 italic">Using: {session.route_name}</span>
           )}
         </div>
       )}
@@ -181,11 +181,11 @@ function SessionPlan({
 
       {/* Route summary */}
       {session.route_summary && (
-        <div className="flex items-center gap-3 mb-4 text-xs text-zinc-400 bg-zinc-800/60 rounded-xl px-3 py-2 flex-wrap">
+        <div className="flex items-center gap-3 mb-4 text-xs text-gray-500 bg-gray-50 rounded-xl px-3 py-2 flex-wrap">
           <span>🗺 {session.route_summary.distance_km} km</span>
-          <span className="text-zinc-600">·</span>
+          <span className="text-gray-300">·</span>
           <span>↑ {session.route_summary.elevation_gain_m} m</span>
-          <span className="text-zinc-600">·</span>
+          <span className="text-gray-300">·</span>
           <span>≈ {Math.floor(session.route_summary.estimated_minutes / 60)}h{session.route_summary.estimated_minutes % 60 > 0 ? ` ${session.route_summary.estimated_minutes % 60}min` : ''}</span>
         </div>
       )}
@@ -195,15 +195,15 @@ function SessionPlan({
         <div className="flex gap-3 mb-1">
           <div className="flex flex-col items-center gap-1 pt-0.5 shrink-0">
             <div className="w-2 h-2 rounded-full bg-emerald-700" />
-            <div className="w-px flex-1 bg-zinc-800" />
+            <div className="w-px flex-1 bg-gray-200" />
           </div>
           <div className="pb-3">
             <div className="flex items-baseline gap-2">
               <span className="text-xs font-semibold text-emerald-600">Warmup</span>
-              <span className="text-xs text-zinc-500">{session.warmup_minutes}min</span>
+              <span className="text-xs text-gray-400">{session.warmup_minutes}min</span>
             </div>
             {session.warmup_notes && (
-              <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">{session.warmup_notes}</p>
+              <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{session.warmup_notes}</p>
             )}
           </div>
         </div>
@@ -218,15 +218,15 @@ function SessionPlan({
       {session.cooldown_minutes > 0 && (
         <div className="flex gap-3">
           <div className="flex flex-col items-center gap-1 pt-0.5 shrink-0">
-            <div className="w-2 h-2 rounded-full bg-zinc-700" />
+            <div className="w-2 h-2 rounded-full bg-gray-200" />
           </div>
           <div>
             <div className="flex items-baseline gap-2">
-              <span className="text-xs font-semibold text-zinc-600">Cooldown</span>
-              <span className="text-xs text-zinc-600">{session.cooldown_minutes}min</span>
+              <span className="text-xs font-semibold text-gray-400">Cooldown</span>
+              <span className="text-xs text-gray-400">{session.cooldown_minutes}min</span>
             </div>
             {session.cooldown_notes && (
-              <p className="text-xs text-zinc-600 mt-0.5 leading-relaxed">{session.cooldown_notes}</p>
+              <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{session.cooldown_notes}</p>
             )}
           </div>
         </div>
@@ -299,25 +299,25 @@ export default function Plan() {
     setSessionOverrides((prev) => ({ ...prev, [workoutId]: session }))
   }
 
-  if (loading) return <div className="flex items-center justify-center h-64 text-zinc-500 text-sm">Loading…</div>
+  if (loading) return <div className="flex items-center justify-center h-64 text-gray-400 text-sm">Loading…</div>
 
-  const phaseStyle = plan ? (PHASE_STYLES[plan.phase] ?? { text: 'text-zinc-400', bg: '', border: '' }) : null
+  const phaseStyle = plan ? (PHASE_STYLES[plan.phase] ?? { text: 'text-gray-400', bg: '', border: '' }) : null
 
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-white">Weekly Plan</h1>
+          <h1 className="text-xl font-bold text-gray-900">Weekly Plan</h1>
           {plan && phaseStyle && (
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-              <span className="text-sm text-zinc-500">Week of {plan.week_start}</span>
-              <span className="text-zinc-700">·</span>
+              <span className="text-sm text-gray-400">Week of {plan.week_start}</span>
+              <span className="text-gray-300">·</span>
               <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full border', phaseStyle.text, phaseStyle.bg, phaseStyle.border)}>
                 {plan.phase}
               </span>
-              <span className="text-zinc-700">·</span>
-              <span className="text-xs text-zinc-500">{plan.season === 'SKI' ? '⛷️ Ski season' : '🚴 Road season'}</span>
+              <span className="text-gray-300">·</span>
+              <span className="text-xs text-gray-400">{plan.season === 'SKI' ? '⛷️ Ski season' : '🚴 Road season'}</span>
             </div>
           )}
         </div>
@@ -326,8 +326,8 @@ export default function Plan() {
           className={clsx(
             'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all border shrink-0',
             showScheduler
-              ? 'bg-zinc-800 border-zinc-600 text-zinc-200'
-              : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600',
+              ? 'bg-gray-100 border-gray-300 text-gray-700'
+              : 'bg-white border-gray-200 text-gray-500 hover:text-gray-800 hover:border-gray-400',
           )}
         >
           <CalendarDays size={14} />
@@ -338,13 +338,13 @@ export default function Plan() {
 
       {/* Schedule picker panel */}
       {showScheduler && (
-        <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-          <h2 className="text-sm font-semibold text-white mb-1">Your schedule for this week</h2>
-          <p className="text-xs text-zinc-500 mb-5 leading-relaxed">
+        <div className="bg-white rounded-2xl p-5 border border-gray-200">
+          <h2 className="text-sm font-semibold text-gray-900 mb-1">Your schedule for this week</h2>
+          <p className="text-xs text-gray-500 mb-5 leading-relaxed">
             Specify what you want to do on each day. Rest days are respected, sport preferences are honoured, and remaining days are filled automatically.
           </p>
           <div className="mb-5">
-            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2.5 block">Training phase</label>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2.5 block">Training phase</label>
             <div className="flex gap-2 flex-wrap">
               {[
                 { value: 'AUTO',     label: 'Auto-detect',  style: null },
@@ -359,8 +359,8 @@ export default function Plan() {
                   className={clsx(
                     'px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all',
                     phaseOverride === opt.value
-                      ? (opt.style ?? 'border-zinc-500 text-zinc-200 bg-zinc-800')
-                      : 'border-zinc-800 text-zinc-600 hover:border-zinc-600 hover:text-zinc-400',
+                      ? (opt.style ?? 'border-indigo-400 text-indigo-700 bg-indigo-50')
+                      : 'border-gray-200 text-gray-400 hover:border-gray-400 hover:text-gray-700',
                   )}
                 >
                   {opt.label}
@@ -380,7 +380,7 @@ export default function Plan() {
             </button>
             <button
               onClick={() => { setSchedule(makeEmptySchedule()); setShowScheduler(false) }}
-              className="text-zinc-500 hover:text-zinc-300 text-sm transition-colors"
+              className="text-gray-400 hover:text-gray-700 text-sm transition-colors"
             >
               Reset &amp; close
             </button>
@@ -400,11 +400,11 @@ export default function Plan() {
             {generating ? 'Generating…' : plan ? 'Regenerate plan' : 'Generate plan'}
           </button>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-600">Phase:</span>
+            <span className="text-xs text-gray-500">Phase:</span>
             <select
               value={phaseOverride}
               onChange={(e) => setPhaseOverride(e.target.value)}
-              className="bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+              className="bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
             >
               <option value="AUTO">Auto-detect</option>
               <option value="BASE">Base</option>
@@ -421,16 +421,16 @@ export default function Plan() {
       )}
 
       {plan?.narrative && (
-        <div className="bg-zinc-900 rounded-2xl p-5 border border-blue-900/40">
-          <p className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-2">Coach's Note</p>
-          <p className="text-sm text-zinc-300 leading-relaxed">{plan.narrative}</p>
+        <div className="bg-indigo-50 rounded-2xl p-5 border border-indigo-100">
+          <p className="text-xs font-semibold text-indigo-600 uppercase tracking-wider mb-2">Coach's Note</p>
+          <p className="text-sm text-gray-700 leading-relaxed">{plan.narrative}</p>
         </div>
       )}
 
       {plan ? (
         <div className="flex flex-col gap-2.5">
           {plan.workouts.map((w) => {
-            const typeStyle = TYPE_STYLES[w.workout_type] ?? { dot: 'bg-zinc-600', badge: 'text-zinc-400 bg-zinc-800 border-zinc-700' }
+            const typeStyle = TYPE_STYLES[w.workout_type] ?? { dot: 'bg-gray-300', badge: 'text-gray-500 bg-gray-100 border-gray-200' }
             const sessionExpanded = expandedSessions.has(w.id)
             const session = sessionOverrides[w.id] ?? w.structured_session
             const hasSession = !!session
@@ -439,8 +439,8 @@ export default function Plan() {
               <div
                 key={w.id}
                 className={clsx(
-                  'bg-zinc-900 rounded-2xl border transition-all',
-                  w.is_unstructured ? 'border-yellow-900/60' : 'border-zinc-800',
+                  'bg-white rounded-2xl border transition-all',
+                  w.is_unstructured ? 'border-yellow-300' : 'border-gray-200',
                   w.is_completed && 'opacity-60',
                 )}
               >
@@ -449,9 +449,9 @@ export default function Plan() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2.5 mb-2.5 flex-wrap">
                         <span className="text-lg leading-none">{SPORT_ICONS[w.sport] ?? '🏋️'}</span>
-                        <span className="font-semibold text-white text-sm">
+                        <span className="font-semibold text-gray-900 text-sm">
                           {DAYS[w.day_of_week]}
-                          <span className="text-zinc-500 font-normal"> · {w.sport.replace('_', ' ')}</span>
+                          <span className="text-gray-400 font-normal"> · {w.sport.replace('_', ' ')}</span>
                         </span>
                         {w.is_unstructured ? (
                           <span className="text-xs px-2 py-0.5 rounded-full border border-yellow-800/60 text-yellow-400 bg-yellow-950/40 font-medium">
@@ -463,27 +463,27 @@ export default function Plan() {
                               {w.workout_type}
                             </span>
                             {w.intensity_zone && (
-                              <span className="text-xs text-zinc-500 font-mono">{w.intensity_zone}</span>
+                              <span className="text-xs text-gray-400 font-mono">{w.intensity_zone}</span>
                             )}
                           </>
                         )}
-                        <span className="text-sm text-zinc-400 ml-auto font-semibold tabular-nums">
-                          {w.duration_minutes}<span className="text-zinc-600 font-normal text-xs">min</span>
+                        <span className="text-sm text-gray-600 ml-auto font-semibold tabular-nums">
+                          {w.duration_minutes}<span className="text-gray-400 font-normal text-xs">min</span>
                         </span>
                       </div>
 
                       {w.is_unstructured ? (
-                        <p className="text-sm text-zinc-500 italic">No structured effort — enjoy the ride and go by feel.</p>
+                        <p className="text-sm text-gray-400 italic">No structured effort — enjoy the ride and go by feel.</p>
                       ) : (
-                        <p className="text-sm text-zinc-400 leading-relaxed">{w.purpose}</p>
+                        <p className="text-sm text-gray-600 leading-relaxed">{w.purpose}</p>
                       )}
 
                       {!w.is_unstructured && w.terrain_notes && (
-                        <p className="text-xs text-amber-400/80 mt-2 leading-relaxed">⛰ {w.terrain_notes}</p>
+                        <p className="text-xs text-amber-600 mt-2 leading-relaxed">⛰ {w.terrain_notes}</p>
                       )}
 
                       {w.ai_compliance_notes && (
-                        <p className="text-xs text-zinc-600 mt-2 italic">Compliance: {w.ai_compliance_notes}</p>
+                        <p className="text-xs text-gray-400 mt-2 italic">Compliance: {w.ai_compliance_notes}</p>
                       )}
                     </div>
 
@@ -503,7 +503,7 @@ export default function Plan() {
                             'text-xs px-2.5 py-1 rounded-lg border transition-all',
                             w.is_unstructured
                               ? 'text-yellow-400 border-yellow-800/60 hover:border-yellow-600'
-                              : 'text-zinc-600 border-zinc-800 hover:text-zinc-300 hover:border-zinc-600',
+                              : 'text-gray-400 border-gray-200 hover:text-gray-700 hover:border-gray-400',
                           )}
                         >
                           {w.is_unstructured ? 'Go structured' : 'Free ride'}
@@ -525,10 +525,10 @@ export default function Plan() {
 
                 {/* Session plan toggle */}
                 {hasSession && !w.is_unstructured && (
-                  <div className="border-t border-zinc-800">
+                  <div className="border-t border-gray-100">
                     <button
                       onClick={() => toggleSession(w.id)}
-                      className="w-full flex items-center gap-2 px-5 py-2.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                      className="w-full flex items-center gap-2 px-5 py-2.5 text-xs text-gray-400 hover:text-gray-700 transition-colors"
                     >
                       <ChevronRight
                         size={12}
@@ -536,7 +536,7 @@ export default function Plan() {
                       />
                       Session plan
                       {session.route_name && (
-                        <span className="text-zinc-600 ml-1">· {session.route_name}</span>
+                        <span className="text-gray-400 ml-1">· {session.route_name}</span>
                       )}
                     </button>
 
@@ -560,9 +560,9 @@ export default function Plan() {
           })}
         </div>
       ) : (
-        <div className="bg-zinc-900 rounded-2xl p-12 border border-zinc-800 text-center">
-          <p className="text-zinc-500 mb-2 text-sm">No plan for this week yet.</p>
-          <p className="text-zinc-600 text-xs leading-relaxed">
+        <div className="bg-white rounded-2xl p-12 border border-gray-200 text-center">
+          <p className="text-gray-400 mb-2 text-sm">No plan for this week yet.</p>
+          <p className="text-gray-400 text-xs leading-relaxed">
             Click "Generate plan" above, or use "Set schedule" to specify which days you want to train.
           </p>
         </div>

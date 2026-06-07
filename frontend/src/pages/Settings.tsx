@@ -5,8 +5,8 @@ import type { Athlete } from '../types'
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
-      <h2 className="text-sm font-semibold text-white mb-5">{title}</h2>
+    <section className="bg-white rounded-2xl p-6 border border-gray-200">
+      <h2 className="text-sm font-semibold text-gray-900 mb-5">{title}</h2>
       {children}
     </section>
   )
@@ -23,8 +23,8 @@ function Field({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">{label}</label>
-      {hint && <p className="text-xs text-zinc-600 leading-relaxed">{hint}</p>}
+      <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</label>
+      {hint && <p className="text-xs text-gray-400 leading-relaxed">{hint}</p>}
       {children}
     </div>
   )
@@ -78,21 +78,21 @@ export default function Settings() {
   return (
     <div className="max-w-2xl flex flex-col gap-5">
       <div>
-        <h1 className="text-xl font-bold text-white">Settings</h1>
+        <h1 className="text-xl font-bold text-gray-900">Settings</h1>
       </div>
 
       <Section title="Garmin Connection">
         <div className="flex items-center gap-2.5 mb-5">
           <div className="w-2 h-2 rounded-full bg-emerald-400" />
-          <span className="text-sm text-zinc-300">
-            Connected as <span className="font-semibold text-white">{athlete?.display_name ?? '…'}</span>
+          <span className="text-sm text-gray-600">
+            Connected as <span className="font-semibold text-gray-900">{athlete?.display_name ?? '…'}</span>
           </span>
         </div>
         <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => handleSync(30)}
             disabled={syncing}
-            className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-zinc-700"
+            className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200"
           >
             <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
             {syncing ? 'Syncing…' : 'Sync last 30 days'}
@@ -100,21 +100,21 @@ export default function Settings() {
           <button
             onClick={() => handleSync(180)}
             disabled={syncing}
-            className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-zinc-700"
+            className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200"
           >
             <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
             {syncing ? 'Syncing…' : 'Sync last 6 months'}
           </button>
         </div>
         {syncResult && (
-          <p className="text-sm text-zinc-400 mt-3 flex items-center gap-2">
+          <p className="text-sm text-gray-500 mt-3 flex items-center gap-2">
             <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />
             {syncResult}
           </p>
         )}
-        <p className="text-xs text-zinc-600 mt-4 leading-relaxed">
+        <p className="text-xs text-gray-400 mt-4 leading-relaxed">
           Uses credentials from{' '}
-          <code className="text-zinc-400 bg-zinc-800 px-1 py-0.5 rounded">backend/.env</code>. No developer account needed.
+          <code className="text-gray-600 bg-gray-100 px-1 py-0.5 rounded">backend/.env</code>. No developer account needed.
         </p>
       </Section>
 
@@ -124,7 +124,7 @@ export default function Settings() {
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-500 transition-shadow"
+              className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-500 transition-shadow"
             />
           </Field>
           <Field
@@ -136,7 +136,7 @@ export default function Settings() {
               onChange={(e) => setFtp(e.target.value)}
               type="number"
               placeholder="e.g. 260"
-              className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm w-36 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-shadow"
+              className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm w-36 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-shadow"
             />
           </Field>
           <Field
@@ -148,7 +148,7 @@ export default function Settings() {
               onChange={(e) => setLthr(e.target.value)}
               type="number"
               placeholder="e.g. 162"
-              className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm w-36 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-shadow"
+              className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm w-36 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-shadow"
             />
           </Field>
           <button
@@ -171,15 +171,15 @@ export default function Settings() {
               body: (
                 <>
                   Copy{' '}
-                  <code className="text-zinc-300 bg-zinc-800 px-1 py-0.5 rounded">backend/.env.example</code> to{' '}
-                  <code className="text-zinc-300 bg-zinc-800 px-1 py-0.5 rounded">backend/.env</code> and set your Garmin Connect email and password.
+                  <code className="text-gray-700 bg-gray-100 px-1 py-0.5 rounded">backend/.env.example</code> to{' '}
+                  <code className="text-gray-700 bg-gray-100 px-1 py-0.5 rounded">backend/.env</code> and set your Garmin Connect email and password.
                 </>
               ),
             },
             {
               title: '2. Start the backend',
               body: (
-                <pre className="text-zinc-300 bg-zinc-800 border border-zinc-700 px-3 py-2.5 rounded-lg mt-1.5 text-xs leading-relaxed">
+                <pre className="text-gray-700 bg-gray-100 border border-gray-200 px-3 py-2.5 rounded-lg mt-1.5 text-xs leading-relaxed">
                   {'cd backend\npip install -r requirements.txt\nuvicorn app.main:app --reload'}
                 </pre>
               ),
@@ -201,14 +201,14 @@ export default function Settings() {
               body: (
                 <>
                   Set{' '}
-                  <code className="text-zinc-300 bg-zinc-800 px-1 py-0.5 rounded">ANTHROPIC_API_KEY</code> in your .env for AI coaching narratives and compliance scoring. The app works fully without it.
+                  <code className="text-gray-700 bg-gray-100 px-1 py-0.5 rounded">ANTHROPIC_API_KEY</code> in your .env for AI coaching narratives and compliance scoring. The app works fully without it.
                 </>
               ),
             },
           ].map((step) => (
             <li key={step.title}>
-              <p className="text-sm font-semibold text-zinc-200 mb-1">{step.title}</p>
-              <p className="text-sm text-zinc-500 leading-relaxed">{step.body}</p>
+              <p className="text-sm font-semibold text-gray-800 mb-1">{step.title}</p>
+              <p className="text-sm text-gray-500 leading-relaxed">{step.body}</p>
             </li>
           ))}
         </ol>

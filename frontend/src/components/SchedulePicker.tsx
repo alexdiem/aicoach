@@ -46,7 +46,7 @@ export default function SchedulePicker({ schedule, onChange }: Props) {
             <div key={dow} className="flex flex-col gap-1.5">
               <span className={clsx(
                 'text-xs font-semibold text-center',
-                isRest ? 'text-zinc-700' : hasSport ? 'text-zinc-200' : 'text-zinc-500'
+                isRest ? 'text-gray-300' : hasSport ? 'text-gray-800' : 'text-gray-400'
               )}>
                 {day}
               </span>
@@ -56,10 +56,10 @@ export default function SchedulePicker({ schedule, onChange }: Props) {
                 className={clsx(
                   'w-full appearance-none rounded-lg border px-1.5 py-1.5 text-xs font-medium cursor-pointer transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500 text-center',
                   isRest
-                    ? 'bg-zinc-900 border-zinc-700 text-zinc-600'
+                    ? 'bg-gray-100 border-gray-200 text-gray-300'
                     : hasSport
                       ? 'bg-blue-950/40 border-blue-800 text-blue-300'
-                      : 'bg-zinc-800 border-zinc-700 text-zinc-400',
+                      : 'bg-white border-gray-200 text-gray-500',
                 )}
               >
                 {OPTIONS.map((opt) => (
@@ -76,7 +76,7 @@ export default function SchedulePicker({ schedule, onChange }: Props) {
       {hasAnyPreference && (
         <button
           onClick={reset}
-          className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors self-start"
+          className="text-xs text-gray-400 hover:text-gray-700 transition-colors self-start"
         >
           Reset all to auto
         </button>

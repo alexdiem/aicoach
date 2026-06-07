@@ -325,16 +325,80 @@ export default function Dashboard() {
         <p className="text-xs text-gray-500 leading-snug">{tsbContext(current.tsb)}</p>
       </div>
 
-      {/* ── CHART tile — cols 1-3, row 3 ─────────────────────────────── */}
+      {/* ── CHART + THIS WEEK — cols 1-3, rows 3-4 ──────────────────── */}
       <div
-        className="rounded-2xl p-5 border border-gray-200 bg-white"
-        style={{ gridColumn: '1 / 4', gridRow: '3', alignSelf: 'start' }}
+        className="flex flex-col gap-3"
+        style={{ gridColumn: '1 / 4', gridRow: '3 / 5' }}
       >
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">90-Day Training Load</p>
-        {fitness && fitness.series.length > 0
-          ? <FitnessChart data={fitness.series} />
-          : <p className="text-sm text-gray-400 py-8 text-center">No fitness data yet.</p>
-        }
+        {/* Chart */}
+        <div className="rounded-2xl p-5 border border-gray-200 bg-white">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">90-Day Training Load</p>
+          {fitness && fitness.series.length > 0
+            ? <FitnessChart data={fitness.series} />
+            : <p className="text-sm text-gray-400 py-8 text-center">No fitness data yet.</p>
+          }
+        </div>
+
+        {/* This Week */}
+        <div className="rounded-2xl p-5 border border-gray-200 bg-white">
+          <div className="flex items-center justify-between mb-3">
+            <TileLabel color="#374151">This Week</TileLabel>
+            <a
+              href="/plan"
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors"
+            >
+              Full plan <ChevronRight size={12} />
+            </a>
+          </div>
+
+          {plan ? (
+            <>
+              <div className="flex gap-2 flex-wrap">
+                {plan.workouts.map((w: PlannedWorkout) => {
+                  const isToday = w.day_of_week === todayDow
+                  return (
+                    <div
+                      key={w.id}
+                      className={clsx(
+                        'rounded-xl px-3 py-2 flex flex-col items-center gap-0.5 min-w-[60px] transition-all',
+                        isToday
+                          ? 'bg-indigo-600 text-white'
+                          : w.is_completed
+                            ? 'bg-gray-100 text-gray-400'
+                            : 'bg-gray-50 border border-gray-200 text-gray-700',
+                      )}
+                    >
+                      <span className={clsx('text-[10px] font-semibold uppercase tracking-wide', isToday ? 'text-indigo-200' : 'text-gray-400')}>
+                        {DAY_LABELS[w.day_of_week]}
+                      </span>
+                      <span className="text-lg leading-none">{SPORT_ICONS[w.sport] ?? '🏋️'}</span>
+                      <span className={clsx('text-[10px] font-medium', isToday ? 'text-white' : w.is_completed ? 'line-through text-gray-400' : 'text-gray-600')}>
+                        {TYPE_ABBREV[w.workout_type] ?? w.workout_type}
+                      </span>
+                      {w.is_completed && !isToday && <span className="text-[9px] text-emerald-500">✓</span>}
+                    </div>
+                  )
+                })}
+              </div>
+              {plan.narrative && (
+                <div className="mt-3 bg-indigo-50 rounded-xl p-3 border border-indigo-100">
+                  <p className="text-[10px] text-indigo-500 font-semibold uppercase tracking-wider mb-1">Coach's Note</p>
+                  <p className="text-xs text-gray-600 leading-relaxed">{plan.narrative}</p>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-center py-6">
+              <p className="text-gray-400 text-sm mb-2">No plan for this week yet.</p>
+              <a
+                href="/plan"
+                className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 text-sm font-medium transition-colors"
+              >
+                Generate this week's plan <ChevronRight size={14} />
+              </a>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── ACTIVITIES tile — col 4, rows 3-4 ────────────────────────── */}
@@ -346,70 +410,6 @@ export default function Dashboard() {
         <div className="flex-1 overflow-y-auto">
           <ActivityFeed activities={activities} />
         </div>
-      </div>
-
-      {/* ── THIS WEEK tile — cols 1-3, row 4 ─────────────────────────── */}
-      <div
-        className="rounded-2xl p-5 border border-gray-200 bg-white"
-        style={{ gridColumn: '1 / 4', gridRow: '4', alignSelf: 'start' }}
-      >
-        <div className="flex items-center justify-between mb-3">
-          <TileLabel color="#374151">This Week</TileLabel>
-          <a
-            href="/plan"
-            className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors"
-          >
-            Full plan <ChevronRight size={12} />
-          </a>
-        </div>
-
-        {plan ? (
-          <>
-            <div className="flex gap-2 flex-wrap">
-              {plan.workouts.map((w: PlannedWorkout) => {
-                const isToday = w.day_of_week === todayDow
-                return (
-                  <div
-                    key={w.id}
-                    className={clsx(
-                      'rounded-xl px-3 py-2 flex flex-col items-center gap-0.5 min-w-[60px] transition-all',
-                      isToday
-                        ? 'bg-indigo-600 text-white'
-                        : w.is_completed
-                          ? 'bg-gray-100 text-gray-400'
-                          : 'bg-gray-50 border border-gray-200 text-gray-700',
-                    )}
-                  >
-                    <span className={clsx('text-[10px] font-semibold uppercase tracking-wide', isToday ? 'text-indigo-200' : 'text-gray-400')}>
-                      {DAY_LABELS[w.day_of_week]}
-                    </span>
-                    <span className="text-lg leading-none">{SPORT_ICONS[w.sport] ?? '🏋️'}</span>
-                    <span className={clsx('text-[10px] font-medium', isToday ? 'text-white' : w.is_completed ? 'line-through text-gray-400' : 'text-gray-600')}>
-                      {TYPE_ABBREV[w.workout_type] ?? w.workout_type}
-                    </span>
-                    {w.is_completed && !isToday && <span className="text-[9px] text-emerald-500">✓</span>}
-                  </div>
-                )
-              })}
-            </div>
-            {plan.narrative && (
-              <div className="mt-3 bg-indigo-50 rounded-xl p-3 border border-indigo-100">
-                <p className="text-[10px] text-indigo-500 font-semibold uppercase tracking-wider mb-1">Coach's Note</p>
-                <p className="text-xs text-gray-600 leading-relaxed">{plan.narrative}</p>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="text-center py-6">
-            <p className="text-gray-400 text-sm mb-2">No plan for this week yet.</p>
-            <a
-              href="/plan"
-              className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 text-sm font-medium transition-colors"
-            >
-              Generate this week's plan <ChevronRight size={14} />
-            </a>
-          </div>
-        )}
       </div>
     </div>
   )
