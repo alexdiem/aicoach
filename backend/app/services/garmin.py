@@ -152,11 +152,10 @@ def parse_wellness(
 
     if body_battery:
         values = [e.get("value") for e in body_battery if e.get("value") is not None]
-        charged = [e.get("charged") for e in body_battery if e.get("charged") is not None]
         drained = [e.get("drained") for e in body_battery if e.get("drained") is not None]
-        candidates = values or (charged + drained)
+        out["body_battery_max"] = max(values) if values else None
+        candidates = values + drained
         if candidates:
-            out["body_battery_max"] = max(candidates)
             out["body_battery_min"] = min(candidates)
 
     return out

@@ -18,7 +18,7 @@ function formatDuration(seconds: number) {
 }
 
 function formatDistance(meters: number | null) {
-  if (!meters) return null
+  if (meters == null) return null
   return meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters)} m`
 }
 
@@ -61,11 +61,11 @@ export default function ActivityFeed({ activities }: Props) {
               {' · '}
               {formatDuration(a.duration_seconds)}
               {formatDistance(a.distance_meters) && ` · ${formatDistance(a.distance_meters)}`}
-              {a.elevation_gain_meters && ` · ↑${Math.round(a.elevation_gain_meters)}m`}
+              {a.elevation_gain_meters != null && ` · ↑${Math.round(a.elevation_gain_meters)}m`}
             </div>
           </div>
           <div className="text-right shrink-0">
-            {a.training_stress_score ? (
+            {a.training_stress_score != null ? (
               <div className="text-xs font-bold text-indigo-600 tabular-nums">
                 {Math.round(a.training_stress_score)}
                 <span className="text-gray-400 text-[10px] font-normal ml-0.5">TSS</span>

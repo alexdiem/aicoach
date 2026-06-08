@@ -9,13 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.dependencies import verify_api_key
 from app.models.activity import Activity
 from app.models.athlete import Athlete
 from app.services.garmin import parse_garmin_activity
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/garmin", tags=["garmin-webhook"], dependencies=[Depends(verify_api_key)])
+router = APIRouter(prefix="/garmin", tags=["garmin-webhook"])
 
 
 @router.post("/webhook")

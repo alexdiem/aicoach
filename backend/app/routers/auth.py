@@ -9,10 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
+from app.dependencies import verify_api_key
 from app.models.athlete import Athlete
 from app.services.garmin import get_garmin_client
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/auth", tags=["auth"], dependencies=[Depends(verify_api_key)])
 
 
 @router.post("/connect")

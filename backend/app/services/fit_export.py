@@ -227,5 +227,5 @@ def session_to_fit(session: dict, workout_name: str, sport: str = "CYCLING") -> 
     ) + b".FIT"
     header += struct.pack("<H", _crc(header))  # header CRC
 
-    file_crc = _crc(bytes(header) + bytes(records))
+    file_crc = _crc(bytes(records))
     return header + bytes(records) + struct.pack("<H", file_crc)

@@ -14,11 +14,13 @@ export default function RoutesPage() {
   const [dragOver, setDragOver] = useState(false)
   const [uploadName, setUploadName] = useState('')
   const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     getRoutes(athleteId)
       .then(setRoutes)
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Failed to load routes'))
       .finally(() => setLoading(false))
   }, [athleteId])
 
@@ -47,14 +49,21 @@ export default function RoutesPage() {
   }
 
   async function handleDelete(id: number) {
-    await deleteRoute(id, athleteId)
-    setRoutes((prev) => prev.filter((r) => r.id !== id))
+    try {
+      await deleteRoute(id, athleteId)
+      setRoutes((prev) => prev.filter((r) => r.id !== id))
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to delete route')
+    }
   }
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-bold text-gray-900">Route Library</h1>
+        {error && (
+          <div className="mt-3 bg-rose-50 border border-rose-200 rounded-xl p-4 text-rose-700 text-sm">{error}</div>
+        )}
         <p className="text-sm text-gray-500 mt-0.5">Upload FIT or GPX activity files — routes are analysed for climbs and matched to planned intervals.</p>
       </div>
 

@@ -47,7 +47,7 @@ export default function FitnessChart({ data }: Props) {
           tick={{ fill: '#9CA3AF', fontSize: 11 }}
           tickLine={false}
           axisLine={false}
-          interval={Math.floor(formatted.length / 6)}
+          interval={formatted.length < 6 ? 0 : Math.floor(formatted.length / 6)}
         />
         <YAxis
           tick={{ fill: '#9CA3AF', fontSize: 11 }}

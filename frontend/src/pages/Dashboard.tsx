@@ -115,6 +115,7 @@ export default function Dashboard() {
   const [activities, setActivities] = useState<Activity[]>([])
   const [plan, setPlan] = useState<WeeklyPlan | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   const todayDow = (new Date().getDay() + 6) % 7
 
@@ -129,13 +130,19 @@ export default function Dashboard() {
         setActivities(a)
         setPlan(p)
       })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Failed to load'))
       .finally(() => setLoading(false))
   }, [athleteId])
 
   async function handleMarkComplete(workout: PlannedWorkout) {
-    await markWorkoutComplete(workout.id, athleteId)
-    const updated = await getCurrentPlan(athleteId)
-    setPlan(updated)
+    try {
+      await markWorkoutComplete(workout.id, athleteId)
+      const updated = await getCurrentPlan(athleteId)
+      setPlan(updated)
+    } catch (e: unknown) {
+      console.error('Failed to mark workout complete:', e)
+      setError(e instanceof Error ? e.message : 'Failed to mark workout complete')
+    }
   }
 
   if (loading) {
@@ -153,6 +160,9 @@ export default function Dashboard() {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+      {error && (
+        <div className="lg:col-span-4 bg-rose-50 border border-rose-200 rounded-xl p-4 text-rose-700 text-sm">{error}</div>
+      )}
       {/* ── READINESS tile — col 1-2, row 1 ─────────────────────────── */}
       <div
         className="rounded-2xl p-5 border border-gray-200 bg-gray-50 lg:col-span-2"

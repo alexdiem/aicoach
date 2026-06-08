@@ -255,6 +255,7 @@ export default function Plan() {
   useEffect(() => {
     Promise.all([getCurrentPlan(athleteId), getRoutes(athleteId)])
       .then(([p, r]) => { setPlan(p); setRoutes(r) })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Failed to load'))
       .finally(() => setLoading(false))
   }, [athleteId])
 
@@ -277,15 +278,25 @@ export default function Plan() {
   }
 
   async function handleMarkComplete(workout: PlannedWorkout) {
-    await markWorkoutComplete(workout.id, athleteId)
-    const updated = await getCurrentPlan(athleteId)
-    setPlan(updated)
+    try {
+      await markWorkoutComplete(workout.id, athleteId)
+      const updated = await getCurrentPlan(athleteId)
+      setPlan(updated)
+    } catch (e: unknown) {
+      console.error('Failed to mark workout complete:', e)
+      setError(e instanceof Error ? e.message : 'Failed to mark workout complete')
+    }
   }
 
   async function handleToggleUnstructured(workout: PlannedWorkout) {
-    await setWorkoutUnstructured(workout.id, athleteId, !workout.is_unstructured)
-    const updated = await getCurrentPlan(athleteId)
-    setPlan(updated)
+    try {
+      await setWorkoutUnstructured(workout.id, athleteId, !workout.is_unstructured)
+      const updated = await getCurrentPlan(athleteId)
+      setPlan(updated)
+    } catch (e: unknown) {
+      console.error('Failed to toggle unstructured:', e)
+      setError(e instanceof Error ? e.message : 'Failed to update workout')
+    }
   }
 
   function toggleSession(workoutId: number) {

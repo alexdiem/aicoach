@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 
 interface AsyncState<T> {
   data: T | null
@@ -22,6 +22,11 @@ export function useAsync<T>(
       })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
+
+  useEffect(() => {
+    run()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run])
 
   return { ...state, reload: run }
 }

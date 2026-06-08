@@ -67,7 +67,15 @@ def _parse_gpx_activity(content: bytes) -> dict:
     gpx = gpxpy.parse(gpx_text)
     # Also parse raw XML for extensions, matched positionally to gpxpy points.
     root = ET.fromstring(gpx_text)
-    trkpts = root.findall('.//gpx:trkpt', {'gpx': 'http://www.topografix.com/GPX/1/1'})
+    ns_candidates = [
+        "http://www.topografix.com/GPX/1/1",
+        "http://www.topografix.com/GPX/1/0",
+    ]
+    trkpts = []
+    for ns in ns_candidates:
+        trkpts = root.findall(f".//{{{ns}}}trkpt")
+        if trkpts:
+            break
 
     points = []
     cumulative_dist = 0.0

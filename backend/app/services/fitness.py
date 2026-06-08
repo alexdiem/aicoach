@@ -233,6 +233,14 @@ async def get_fitness_snapshot(
     athlete_result = await db.execute(select(Athlete).where(Athlete.id == athlete_id))
     athlete = athlete_result.scalar_one_or_none()
 
+    if not athlete:
+        return {
+            "ctl": 0.0, "atl": 0.0, "tsb": 0.0,
+            "_activities": [],
+            **({"readiness": None} if include_readiness else {}),
+            **({"recent_wellness": []} if include_wellness else {}),
+        }
+
     acts_result = await db.execute(
         select(Activity)
         .where(Activity.athlete_id == athlete_id, Activity.start_time >= cutoff)

@@ -262,7 +262,12 @@ async def mark_workout_complete(
     athlete: Athlete = Depends(get_athlete_or_404),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
+    athlete_id = athlete.id
+    result = await db.execute(
+        select(PlannedWorkout)
+        .join(WeeklyPlan, PlannedWorkout.plan_id == WeeklyPlan.id)
+        .where(PlannedWorkout.id == workout_id, WeeklyPlan.athlete_id == athlete_id)
+    )
     workout = result.scalar_one_or_none()
     if not workout:
         raise HTTPException(status_code=404, detail="Workout not found.")
@@ -289,7 +294,11 @@ async def build_workout_structure(
     db: AsyncSession = Depends(get_db),
 ):
     """Rebuild (or build for the first time) the structured session for a workout, optionally using a specific route."""
-    result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
+    result = await db.execute(
+        select(PlannedWorkout)
+        .join(WeeklyPlan, PlannedWorkout.plan_id == WeeklyPlan.id)
+        .where(PlannedWorkout.id == workout_id, WeeklyPlan.athlete_id == athlete.id)
+    )
     workout = result.scalar_one_or_none()
     if not workout:
         raise HTTPException(status_code=404, detail="Workout not found.")
@@ -323,7 +332,11 @@ async def set_workout_unstructured(
     athlete: Athlete = Depends(get_athlete_or_404),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
+    result = await db.execute(
+        select(PlannedWorkout)
+        .join(WeeklyPlan, PlannedWorkout.plan_id == WeeklyPlan.id)
+        .where(PlannedWorkout.id == workout_id, WeeklyPlan.athlete_id == athlete.id)
+    )
     workout = result.scalar_one_or_none()
     if not workout:
         raise HTTPException(status_code=404, detail="Workout not found.")
@@ -338,7 +351,11 @@ async def download_workout_fit(
     db: AsyncSession = Depends(get_db),
 ):
     """Download a Garmin FIT workout file for the given planned workout."""
-    result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
+    result = await db.execute(
+        select(PlannedWorkout)
+        .join(WeeklyPlan, PlannedWorkout.plan_id == WeeklyPlan.id)
+        .where(PlannedWorkout.id == workout_id, WeeklyPlan.athlete_id == athlete.id)
+    )
     workout = result.scalar_one_or_none()
     if not workout:
         raise HTTPException(status_code=404, detail="Workout not found.")

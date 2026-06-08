@@ -42,6 +42,7 @@ export default function Settings() {
   const [syncingDays, setSyncingDays] = useState<number | null>(null)
   const [syncResult, setSyncResult] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     getAthlete(athleteId).then((a) => {
@@ -49,19 +50,24 @@ export default function Settings() {
       setFtp(String(a.ftp_watts ?? ''))
       setLthr(String(a.lthr ?? ''))
       setName(a.display_name ?? '')
-    })
+    }).catch((e: unknown) => setError(e instanceof Error ? e.message : 'Failed to load'))
   }, [athleteId])
 
   async function handleSave() {
     setSaving(true)
-    await updateAthlete(athleteId, {
-      display_name: name || undefined,
-      ftp_watts: ftp ? parseFloat(ftp) : undefined,
-      lthr: lthr ? parseFloat(lthr) : undefined,
-    })
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-    setSaving(false)
+    try {
+      await updateAthlete(athleteId, {
+        display_name: name || undefined,
+        ftp_watts: ftp ? parseFloat(ftp) : undefined,
+        lthr: lthr ? parseFloat(lthr) : undefined,
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to save')
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function handleSync(days: number) {
@@ -83,6 +89,10 @@ export default function Settings() {
       <div>
         <h1 className="text-xl font-bold text-gray-900">Settings</h1>
       </div>
+
+      {error && (
+        <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-rose-700 text-sm">{error}</div>
+      )}
 
       <Section title="Garmin Connection">
         <div className="flex items-center gap-2.5 mb-5">
