@@ -17,6 +17,20 @@ export const DB_PATH = process.env.AICOACH_DB || resolve(here, '..', 'data', 'ai
 
 const TURSO_URL = process.env.TURSO_DATABASE_URL || null;
 
+// Vercel always sets VERCEL=1 in its function runtime. Its deployment bundle
+// is read-only (only /tmp is writable, and it doesn't persist between
+// invocations anyway), so falling through to the local-sqlite-file path there
+// fails as a confusing ENOENT/EROFS from mkdir deep inside node:sqlite. Fail
+// fast with the actual problem instead.
+if (process.env.VERCEL && !TURSO_URL) {
+  throw new Error(
+    'Running on Vercel but TURSO_DATABASE_URL is not set. Vercel functions have no persistent ' +
+      'local disk, so this app needs a Turso database there — create one and set ' +
+      'TURSO_DATABASE_URL (and TURSO_AUTH_TOKEN) in the Vercel project\'s environment variables, ' +
+      'then redeploy. See the README\'s "Deploying to Vercel" section.'
+  );
+}
+
 let driverPromise = null;
 function driver() {
   if (!driverPromise) {
