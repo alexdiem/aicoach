@@ -217,11 +217,25 @@ server/
   scheduler.js      periodic sync + Monday replan (shared by both entry points)
   cli.js            terminal entry points
 api/
-  index.js          Vercel entry point: same route table, no scheduler; also
-                     dispatches /api/cron internally (see vercel.json's rewrite)
+  <mirrors every /api/* path the frontend calls, one file each — see below>
+  cron.js           Vercel Cron target
 public/             index.html, app.js, styles.css
-vercel.json         static output dir, /api/* rewrite, cron schedule
+vercel.json         static output dir + cron schedule
 ```
+
+**Why one file per route, not a catch-all:** an earlier version tried a single
+`api/[...slug].js` catch-all (Vercel's documented convention for "one function
+handles everything under this path"), and then a `vercel.json` rewrite rule
+pointing every `/api/*` request at one function. Neither behaved as documented
+in practice — single-segment paths like `/api/status` resolved, but anything
+with two or more path segments 404'd at Vercel's platform routing layer before
+the function code ever ran. Rather than keep chasing that, every path the
+frontend actually calls now has a real, literal file under `api/` (e.g.
+`api/plan/adaptation.js`, `api/goals/[id].js` for the one genuinely dynamic
+segment). Each file is a few lines forwarding to the same shared dispatcher in
+`server/requestHandler.js` — the routing logic itself still lives entirely in
+`server/api.js`'s route table, unchanged; the per-file structure only exists
+so Vercel has something concrete to resolve at every exact path.
 
 ## CLI
 
