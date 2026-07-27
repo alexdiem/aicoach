@@ -13,7 +13,7 @@ import { addDays, mean, round, today } from './util.js';
 
 const PAIN_ORDER = { none: 0, mild: 1, moderate: 2, flare: 3 };
 
-export function loggedRides(from, to) {
+export async function loggedRides(from, to) {
   return db
     .prepare(
       `SELECT a.id, a.date, a.name, a.type, a.intensity, a.vi, a.np, a.avg_power, a.tss,
@@ -41,16 +41,16 @@ function rate(hits, n) {
  *
  * @param severity 'moderate' (default: moderate+flare count as pain) | 'mild'
  */
-export function painCorrelation({
+export async function painCorrelation({
   days = 365,
   asOf = today(),
   highIf = null,
   severity = 'moderate',
   limit = null,
 } = {}) {
-  const ifThreshold = highIf ?? getSettingNum('high_if_threshold', 0.8);
+  const ifThreshold = highIf ?? (await getSettingNum('high_if_threshold', 0.8));
   const threshold = severity === 'mild' ? 1 : 2;
-  let rides = loggedRides(addDays(asOf, -days + 1), asOf);
+  let rides = await loggedRides(addDays(asOf, -days + 1), asOf);
   if (limit) rides = rides.slice(0, limit);
 
   const withIf = rides.filter((r) => r.intensity != null);
@@ -177,8 +177,8 @@ function buildHeadline(table, dur, severity, ifThreshold) {
 }
 
 /** Compact flag for the weekly brief. Returns null when there's nothing to say. */
-export function painFlag({ asOf = today(), days = 120 } = {}) {
-  const c = painCorrelation({ asOf, days });
+export async function painFlag({ asOf = today(), days = 120 } = {}) {
+  const c = await painCorrelation({ asOf, days });
   if (!c.sufficient) return null;
   const hi = c.table.highIf;
   const d = hi.byPosition.find((x) => x.position === 'drops');
@@ -195,7 +195,7 @@ export function painFlag({ asOf = today(), days = 120 } = {}) {
 }
 
 /** Recent pain events, for the brief and the UI timeline. */
-export function recentPain({ asOf = today(), days = 42 } = {}) {
+export async function recentPain({ asOf = today(), days = 42 } = {}) {
   return db
     .prepare(
       `SELECT r.date, r.back_pain, r.position, r.drops_minutes, r.pain_onset, r.notes,
@@ -207,32 +207,34 @@ export function recentPain({ asOf = today(), days = 42 } = {}) {
     .all(addDays(asOf, -days + 1), asOf);
 }
 
-export function upsertRideLog(log) {
+export async function upsertRideLog(log) {
   const now = new Date().toISOString();
   const existing = log.activity_id
-    ? db.prepare('SELECT * FROM ride_logs WHERE activity_id = ?').get(log.activity_id)
+    ? await db.prepare('SELECT * FROM ride_logs WHERE activity_id = ?').get(log.activity_id)
     : null;
   if (existing) {
-    db.prepare(
-      `UPDATE ride_logs SET date=?, position=?, drops_minutes=?, back_pain=?, pain_onset=?, rpe=?,
+    await db
+      .prepare(
+        `UPDATE ride_logs SET date=?, position=?, drops_minutes=?, back_pain=?, pain_onset=?, rpe=?,
         cycle_phase=?, carb_g_per_h=?, protein_g=?, notes=?, source='manual', updated_at=? WHERE id=?`
-    ).run(
-      log.date ?? existing.date,
-      log.position ?? existing.position,
-      log.drops_minutes ?? existing.drops_minutes,
-      log.back_pain ?? existing.back_pain,
-      log.pain_onset ?? existing.pain_onset,
-      log.rpe ?? existing.rpe,
-      log.cycle_phase ?? existing.cycle_phase,
-      log.carb_g_per_h ?? existing.carb_g_per_h,
-      log.protein_g ?? existing.protein_g,
-      log.notes ?? existing.notes,
-      now,
-      existing.id
-    );
+      )
+      .run(
+        log.date ?? existing.date,
+        log.position ?? existing.position,
+        log.drops_minutes ?? existing.drops_minutes,
+        log.back_pain ?? existing.back_pain,
+        log.pain_onset ?? existing.pain_onset,
+        log.rpe ?? existing.rpe,
+        log.cycle_phase ?? existing.cycle_phase,
+        log.carb_g_per_h ?? existing.carb_g_per_h,
+        log.protein_g ?? existing.protein_g,
+        log.notes ?? existing.notes,
+        now,
+        existing.id
+      );
     return db.prepare('SELECT * FROM ride_logs WHERE id = ?').get(existing.id);
   }
-  const info = db
+  const info = await db
     .prepare(
       `INSERT INTO ride_logs (activity_id, date, position, drops_minutes, back_pain, pain_onset, rpe,
         cycle_phase, carb_g_per_h, protein_g, notes, source, created_at, updated_at)

@@ -1,5 +1,9 @@
 // End-to-end exercise of the domain logic against a synthetic athlete.
 // Uses a throwaway database so it never touches real data.
+//
+// Everything here is async now: the storage layer may be a networked DB on
+// Vercel (see server/dbdriver.js), so every DB-touching function in the app
+// returns a Promise even when running against the local sqlite file.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -23,17 +27,19 @@ process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
 
 const TODAY = today();
 
-function seedActivity({ date, tss, intensity, np = 200, avgHr = 140, movingTime = 3600 * 2, vi = 1.04, name = 'Ride', wbalDrop = null, desc = null }) {
-  db.prepare(
-    `INSERT OR REPLACE INTO activities (id, date, type, name, description, moving_time, tss, intensity, np,
+async function seedActivity({ date, tss, intensity, np = 200, avgHr = 140, movingTime = 3600 * 2, vi = 1.04, name = 'Ride', wbalDrop = null, desc = null }) {
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO activities (id, date, type, name, description, moving_time, tss, intensity, np,
       avg_power, vi, ef, avg_hr, wbal_drop, w_prime, z_times_json, synced_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-  ).run(
-    `${date}-${Math.random().toString(36).slice(2, 8)}`, date, 'Ride', name, desc, movingTime, tss, intensity, np,
-    Math.round(np / vi), vi, np / avgHr, avgHr, wbalDrop, 22000,
-    JSON.stringify([movingTime * 0.5, movingTime * 0.35, movingTime * 0.1, movingTime * 0.05, 0, 0, 0]),
-    new Date().toISOString()
-  );
+    )
+    .run(
+      `${date}-${Math.random().toString(36).slice(2, 8)}`, date, 'Ride', name, desc, movingTime, tss, intensity, np,
+      Math.round(np / vi), vi, np / avgHr, avgHr, wbalDrop, 22000,
+      JSON.stringify([movingTime * 0.5, movingTime * 0.35, movingTime * 0.1, movingTime * 0.05, 0, 0, 0]),
+      new Date().toISOString()
+    );
 }
 
 test('parseTags reads the intervals.icu description convention', () => {
@@ -57,13 +63,13 @@ test('normaliseActivity derives VI and EF when intervals omits them', () => {
   assert.equal(a.tsb, null); // no ctl/atl supplied
 });
 
-test('fitness series computes CTL/ATL/TSB from load', () => {
-  for (let i = 120; i >= 0; i--) seedActivity({ date: addDays(TODAY, -i), tss: 90, intensity: 0.7 });
-  const cur = metrics.currentFitness(TODAY);
+test('fitness series computes CTL/ATL/TSB from load', async () => {
+  for (let i = 120; i >= 0; i--) await seedActivity({ date: addDays(TODAY, -i), tss: 90, intensity: 0.7 });
+  const cur = await metrics.currentFitness(TODAY);
   // 90 TSS/day sustained for 120 days → CTL approaches 90
   assert.ok(cur.ctl > 80 && cur.ctl <= 91, `CTL was ${cur.ctl}`);
   assert.ok(Math.abs(cur.tsb) < 6, `TSB was ${cur.tsb}`);
-  assert.equal(metrics.rampRate(TODAY) != null, true);
+  assert.equal((await metrics.rampRate(TODAY)) != null, true);
 });
 
 test('event demand model handles a self-supported mountain ultra', () => {
@@ -97,9 +103,9 @@ test('phase allocation is ordered and covers every week', () => {
 });
 
 let goalId;
-test('plan generation produces a periodized, ramping, recovery-punctuated plan', () => {
-  upsertAthlete({ ftp: 230, weight_kg: 62, max_hr: 186, threshold_hr: 168 });
-  const info = db
+test('plan generation produces a periodized, ramping, recovery-punctuated plan', async () => {
+  await upsertAthlete({ ftp: 230, weight_kg: 62, max_hr: 186, threshold_hr: 168 });
+  const info = await db
     .prepare(
       `INSERT INTO goals (name, kind, sport, event_date, start_date, priority, distance_km, elevation_m, support, status, created_at)
        VALUES ('Bright Midnight ultra','event','Ride',?,?,'A',1100,20000,'self-supported','active',?)`
@@ -107,7 +113,7 @@ test('plan generation produces a periodized, ramping, recovery-punctuated plan',
     .run(addDays(TODAY, 7 * 28), TODAY, new Date().toISOString());
   goalId = Number(info.lastInsertRowid);
 
-  const result = planner.generatePlan(goalId, { reason: 'test' });
+  const result = await planner.generatePlan(goalId, { reason: 'test' });
   assert.ok(result.weeks.length >= 28, `got ${result.weeks.length} weeks`);
   assert.equal(result.weeks[result.weeks.length - 1].phase, 'race');
   assert.ok(result.demand.hours > 45);
@@ -140,45 +146,48 @@ test('plan generation produces a periodized, ramping, recovery-punctuated plan',
     assert.ok(gov.some((g) => g.alternative && /Friel/.test(g.alternative)));
   }
 
-  const saved = planner.savePlan(result);
+  const saved = await planner.savePlan(result);
   assert.equal(saved.version, 1);
-  assert.equal(planner.planWeeks(saved.planId).length, result.weeks.length);
+  assert.equal((await planner.planWeeks(saved.planId)).length, result.weeks.length);
 });
 
-test('regeneration preserves past weeks and bumps the version', () => {
-  const before = planner.activePlan(goalId);
-  const firstWeek = planner.planWeeks(before.id)[0];
-  const r = planner.regenerate(goalId, 'test-regen');
+test('regeneration preserves past weeks and bumps the version', async () => {
+  const before = await planner.activePlan(goalId);
+  const firstWeek = (await planner.planWeeks(before.id))[0];
+  const r = await planner.regenerate(goalId, 'test-regen');
   assert.equal(r.version, 2);
-  const after = planner.planWeeks(r.planId);
+  const after = await planner.planWeeks(r.planId);
   assert.equal(after[0].start_date, firstWeek.start_date);
-  assert.equal(planner.activePlan(goalId).version, 2);
+  assert.equal((await planner.activePlan(goalId)).version, 2);
   // Only one active plan at a time.
-  assert.equal(db.prepare('SELECT COUNT(*) c FROM plans WHERE goal_id = ? AND active = 1').get(goalId).c, 1);
+  const count = await db.prepare('SELECT COUNT(*) c FROM plans WHERE goal_id = ? AND active = 1').get(goalId);
+  assert.equal(count.c, 1);
 });
 
-test('brief cites numbers and reacts to deep fatigue', () => {
-  const b1 = brief.buildBrief({ goalId, asOf: TODAY });
+test('brief cites numbers and reacts to deep fatigue', async () => {
+  const b1 = await brief.buildBrief({ goalId, asOf: TODAY });
   assert.ok(b1.headline.length > 0);
   assert.match(b1.body, /CTL \d/);
   assert.ok(b1.metrics.tsb != null);
 
   // Bury the athlete: two weeks of very high load.
-  for (let i = 13; i >= 0; i--) seedActivity({ date: addDays(TODAY, -i), tss: 320, intensity: 0.82, np: 215, avgHr: 155 });
-  const b2 = brief.buildBrief({ goalId, asOf: TODAY });
+  for (let i = 13; i >= 0; i--) {
+    await seedActivity({ date: addDays(TODAY, -i), tss: 320, intensity: 0.82, np: 215, avgHr: 155 });
+  }
+  const b2 = await brief.buildBrief({ goalId, asOf: TODAY });
   assert.ok(b2.metrics.tsb < -20, `TSB was ${b2.metrics.tsb}`);
   assert.match(b2.headline, /Z2|Cut|cut/);
   // The directive must quote the actual TSB number, not a vague hedge.
   assert.match(b2.headline + b2.body, new RegExp(String(Math.round(b2.metrics.tsb))));
   assert.ok(b2.flags.some((f) => f.id === 'form'));
 
-  const saved = brief.saveBrief(b2);
+  const saved = await brief.saveBrief(b2);
   assert.equal(saved.week_start, weekStart(TODAY));
   assert.ok(saved.body_md.includes('Where you are'));
 });
 
-test('brief contains no filler advice', () => {
-  const b = brief.buildBrief({ goalId, asOf: TODAY });
+test('brief contains no filler advice', async () => {
+  const b = await brief.buildBrief({ goalId, asOf: TODAY });
   const text = (b.body + b.actions.join(' ') + b.flags.map((f) => f.text).join(' ')).toLowerCase();
   for (const banned of ['listen to your body', 'consider recovery', 'as needed', 'if you feel']) {
     assert.ok(!text.includes(banned), `brief contained filler: "${banned}"`);
@@ -187,44 +196,44 @@ test('brief contains no filler advice', () => {
   for (const a of b.actions) assert.match(a, /\d/, `action without a number: ${a}`);
 });
 
-test('EF decline at matched IF while load rises reads as under-recovery', () => {
+test('EF decline at matched IF while load rises reads as under-recovery', async () => {
   // Wipe and rebuild a history with a deliberate EF collapse at constant IF.
-  db.exec('DELETE FROM activities');
+  await db.exec('DELETE FROM activities');
   for (let i = 90; i >= 43; i--) {
-    seedActivity({ date: addDays(TODAY, -i), tss: 100, intensity: 0.7, np: 200, avgHr: 135, movingTime: 5400 });
+    await seedActivity({ date: addDays(TODAY, -i), tss: 100, intensity: 0.7, np: 200, avgHr: 135, movingTime: 5400 });
   }
   for (let i = 42; i >= 0; i--) {
     // Same IF and NP, higher HR → EF down ~10%; and more load per day.
-    seedActivity({ date: addDays(TODAY, -i), tss: 200, intensity: 0.71, np: 200, avgHr: 150, movingTime: 7200 });
+    await seedActivity({ date: addDays(TODAY, -i), tss: 200, intensity: 0.71, np: 200, avgHr: 150, movingTime: 7200 });
   }
-  const ef = metrics.efTrend(TODAY);
+  const ef = await metrics.efTrend(TODAY);
   assert.equal(ef.reliable, true);
   assert.ok(ef.changePct <= -5, `EF change was ${ef.changePct}%`);
 
-  const adapt = planner.adaptationInputs(TODAY);
+  const adapt = await planner.adaptationInputs(TODAY);
   assert.equal(adapt.underRecovery, true);
 
-  const b = brief.buildBrief({ goalId, asOf: TODAY });
+  const b = await brief.buildBrief({ goalId, asOf: TODAY });
   const flag = b.flags.find((f) => f.id === 'under-recovery');
   assert.ok(flag, 'expected an under-recovery flag');
   assert.match(flag.text, /EF is down/);
   assert.match(flag.text, /-\d/);
 
   // And the plan must actually respond, not just describe.
-  const re = planner.generatePlan(goalId, { reason: 'test-underrecovery' });
+  const re = await planner.generatePlan(goalId, { reason: 'test-underrecovery' });
   assert.ok(re.targets.maxRampBase <= 3, `ramp cap was ${re.targets.maxRampBase}`);
   assert.ok(re.notes.some((n) => n.type === 'ramp-capped'));
 });
 
-test('an adjustment is applied to the plan week, not just described', () => {
+test('an adjustment is applied to the plan week, not just described', async () => {
   // The EF-collapse history from the previous test leaves the athlete buried.
-  const plan = planner.activePlan(goalId);
+  const plan = await planner.activePlan(goalId);
   const wsNow = weekStart(TODAY);
-  const before = db.prepare('SELECT * FROM plan_weeks WHERE plan_id = ? AND start_date = ?').get(plan.id, wsNow);
+  const before = await db.prepare('SELECT * FROM plan_weeks WHERE plan_id = ? AND start_date = ?').get(plan.id, wsNow);
   assert.ok(before, 'expected a plan week for the current week');
 
-  const b = brief.buildBrief({ goalId, asOf: TODAY });
-  const after = db.prepare('SELECT * FROM plan_weeks WHERE plan_id = ? AND start_date = ?').get(plan.id, wsNow);
+  const b = await brief.buildBrief({ goalId, asOf: TODAY });
+  const after = await db.prepare('SELECT * FROM plan_weeks WHERE plan_id = ? AND start_date = ?').get(plan.id, wsNow);
 
   assert.ok(after.target_tss < before.target_tss, 'plan week should have been cut');
   assert.equal(after.z5_pct, 0, 'intensity allocation should be zeroed');
@@ -243,36 +252,40 @@ test('an adjustment is applied to the plan week, not just described', () => {
   assert.ok(gov && gov.framework === 'Friel' && /\d/.test(gov.reason));
 });
 
-test('back pain correlation separates position from distance', () => {
-  db.exec('DELETE FROM activities; DELETE FROM ride_logs;');
-  const mk = (date, { intensity, position, pain, hours }) => {
+test('back pain correlation separates position from distance', async () => {
+  await db.exec('DELETE FROM activities; DELETE FROM ride_logs;');
+  const mk = async (date, { intensity, position, pain, hours }) => {
     const id = `act-${date}`;
-    db.prepare(
-      `INSERT INTO activities (id, date, type, name, moving_time, tss, intensity, np, avg_power, vi, avg_hr, ef, synced_at)
+    await db
+      .prepare(
+        `INSERT INTO activities (id, date, type, name, moving_time, tss, intensity, np, avg_power, vi, avg_hr, ef, synced_at)
        VALUES (?,?,'Ride','r',?,?,?,200,190,1.05,140,1.4,?)`
-    ).run(id, date, hours * 3600, intensity * hours * 100, intensity, new Date().toISOString());
-    db.prepare(
-      `INSERT INTO ride_logs (activity_id, date, position, back_pain, source, created_at, updated_at)
+      )
+      .run(id, date, hours * 3600, intensity * hours * 100, intensity, new Date().toISOString());
+    await db
+      .prepare(
+        `INSERT INTO ride_logs (activity_id, date, position, back_pain, source, created_at, updated_at)
        VALUES (?,?,?,?,'manual',?,?)`
-    ).run(id, date, position, pain, new Date().toISOString(), new Date().toISOString());
+      )
+      .run(id, date, position, pain, new Date().toISOString(), new Date().toISOString());
   };
   // 6 high-IF drops rides, 4 with pain; 4 high-IF upright rides, none with pain.
   const hi = 0.85;
-  mk(addDays(TODAY, -2), { intensity: hi, position: 'drops', pain: 'moderate', hours: 2 });
-  mk(addDays(TODAY, -4), { intensity: hi, position: 'drops', pain: 'flare', hours: 2 });
-  mk(addDays(TODAY, -6), { intensity: hi, position: 'drops', pain: 'moderate', hours: 1.5 });
-  mk(addDays(TODAY, -8), { intensity: hi, position: 'drops', pain: 'moderate', hours: 2 });
-  mk(addDays(TODAY, -10), { intensity: hi, position: 'drops', pain: 'none', hours: 2 });
-  mk(addDays(TODAY, -12), { intensity: hi, position: 'drops', pain: 'none', hours: 1.5 });
-  mk(addDays(TODAY, -14), { intensity: hi, position: 'upright', pain: 'none', hours: 2 });
-  mk(addDays(TODAY, -16), { intensity: hi, position: 'upright', pain: 'none', hours: 2 });
-  mk(addDays(TODAY, -18), { intensity: hi, position: 'upright', pain: 'none', hours: 2 });
-  mk(addDays(TODAY, -20), { intensity: hi, position: 'upright', pain: 'none', hours: 2 });
+  await mk(addDays(TODAY, -2), { intensity: hi, position: 'drops', pain: 'moderate', hours: 2 });
+  await mk(addDays(TODAY, -4), { intensity: hi, position: 'drops', pain: 'flare', hours: 2 });
+  await mk(addDays(TODAY, -6), { intensity: hi, position: 'drops', pain: 'moderate', hours: 1.5 });
+  await mk(addDays(TODAY, -8), { intensity: hi, position: 'drops', pain: 'moderate', hours: 2 });
+  await mk(addDays(TODAY, -10), { intensity: hi, position: 'drops', pain: 'none', hours: 2 });
+  await mk(addDays(TODAY, -12), { intensity: hi, position: 'drops', pain: 'none', hours: 1.5 });
+  await mk(addDays(TODAY, -14), { intensity: hi, position: 'upright', pain: 'none', hours: 2 });
+  await mk(addDays(TODAY, -16), { intensity: hi, position: 'upright', pain: 'none', hours: 2 });
+  await mk(addDays(TODAY, -18), { intensity: hi, position: 'upright', pain: 'none', hours: 2 });
+  await mk(addDays(TODAY, -20), { intensity: hi, position: 'upright', pain: 'none', hours: 2 });
   // Long, easy drops rides — the distance control: no pain despite being longest.
-  mk(addDays(TODAY, -22), { intensity: 0.6, position: 'drops', pain: 'none', hours: 7 });
-  mk(addDays(TODAY, -24), { intensity: 0.6, position: 'drops', pain: 'none', hours: 8 });
+  await mk(addDays(TODAY, -22), { intensity: 0.6, position: 'drops', pain: 'none', hours: 7 });
+  await mk(addDays(TODAY, -24), { intensity: 0.6, position: 'drops', pain: 'none', hours: 8 });
 
-  const c = backpain.painCorrelation({ asOf: TODAY, days: 60 });
+  const c = await backpain.painCorrelation({ asOf: TODAY, days: 60 });
   const drops = c.table.highIf.byPosition.find((r) => r.position === 'drops');
   const upright = c.table.highIf.byPosition.find((r) => r.position === 'upright');
   assert.equal(drops.rides, 6);
@@ -285,41 +298,41 @@ test('back pain correlation separates position from distance', () => {
   // The longer half is dominated by the easy 7-8h drops rides with no pain.
   assert.ok(c.durationControl.longer.painRatePct <= c.durationControl.shorter.painRatePct);
 
-  const flag = backpain.painFlag({ asOf: TODAY, days: 60 });
+  const flag = await backpain.painFlag({ asOf: TODAY, days: 60 });
   assert.ok(flag, 'expected a pain flag');
   assert.equal(flag.numbers.dropsPainRatePct, 67);
 });
 
-test('sparse pain data says so instead of inventing a pattern', () => {
-  db.exec('DELETE FROM ride_logs');
-  const c = backpain.painCorrelation({ asOf: TODAY, days: 60 });
+test('sparse pain data says so instead of inventing a pattern', async () => {
+  await db.exec('DELETE FROM ride_logs');
+  const c = await backpain.painCorrelation({ asOf: TODAY, days: 60 });
   assert.equal(c.sufficient, false);
   assert.match(c.headline, /Not enough logged rides/);
-  assert.equal(backpain.painFlag({ asOf: TODAY, days: 60 }), null);
+  assert.equal(await backpain.painFlag({ asOf: TODAY, days: 60 }), null);
 });
 
-test('cycle features stay inert until data is logged, then govern the taper', () => {
-  assert.equal(cycle.hasCycleData(), false);
-  const before = planner.generatePlan(goalId, { reason: 'no-cycle' });
+test('cycle features stay inert until data is logged, then govern the taper', async () => {
+  assert.equal(await cycle.hasCycleData(), false);
+  const before = await planner.generatePlan(goalId, { reason: 'no-cycle' });
   assert.equal(before.cycle.enabled, false);
   assert.ok(before.weeks.every((w) => !JSON.parse(w.governing_json).some((g) => g.decision === 'taper depth')));
 
   // Log period starts such that race week lands in the luteal phase.
-  const goal = db.prepare('SELECT * FROM goals WHERE id = ?').get(goalId);
+  const goal = await db.prepare('SELECT * FROM goals WHERE id = ?').get(goalId);
   const raceWeek = weekStart(goal.event_date);
   // Day 1 of a 28-day cycle placed so race week starts ~day 20 (luteal_early).
   let anchor = addDays(raceWeek, -19);
   for (let k = 0; k < 4; k++) {
-    db.prepare(
-      `INSERT OR REPLACE INTO daily_logs (date, period_start, updated_at) VALUES (?,1,?)`
-    ).run(addDays(anchor, -28 * k), new Date().toISOString());
+    await db
+      .prepare(`INSERT OR REPLACE INTO daily_logs (date, period_start, updated_at) VALUES (?,1,?)`)
+      .run(addDays(anchor, -28 * k), new Date().toISOString());
   }
-  assert.equal(cycle.hasCycleData(), true);
-  assert.equal(cycle.cycleModel().lengthDays, 28);
-  const ph = cycle.phaseFor(raceWeek);
+  assert.equal(await cycle.hasCycleData(), true);
+  assert.equal((await cycle.cycleModel()).lengthDays, 28);
+  const ph = await cycle.phaseFor(raceWeek);
   assert.equal(ph.phase, 'luteal_early');
 
-  const after = planner.generatePlan(goalId, { reason: 'with-cycle' });
+  const after = await planner.generatePlan(goalId, { reason: 'with-cycle' });
   assert.equal(after.cycle.enabled, true);
   assert.equal(after.cycle.raceInHighHormone, true);
   const taperGov = after.weeks
@@ -337,26 +350,26 @@ test('cycle features stay inert until data is logged, then govern the taper', ()
   assert.ok(taperAfter[0] < taperBefore[0], `${taperAfter[0]} should be below ${taperBefore[0]}`);
 });
 
-test('plan stays fully functional with Sims data absent', () => {
-  db.exec('DELETE FROM daily_logs');
-  setSetting('sims_enabled', '0');
-  const r = planner.generatePlan(goalId, { reason: 'sims-off' });
+test('plan stays fully functional with Sims data absent', async () => {
+  await db.exec('DELETE FROM daily_logs');
+  await setSetting('sims_enabled', '0');
+  const r = await planner.generatePlan(goalId, { reason: 'sims-off' });
   assert.ok(r.weeks.length > 0);
   assert.ok(r.weeks.every((w) => w.target_tss > 0 && w.target_hours > 0));
-  const b = brief.buildBrief({ goalId, asOf: TODAY });
+  const b = await brief.buildBrief({ goalId, asOf: TODAY });
   assert.ok(b.headline.length > 0);
   assert.ok(!b.flags.some((f) => f.id === 'cycle'));
-  setSetting('sims_enabled', '1');
+  await setSetting('sims_enabled', '1');
 });
 
-test('weekly run writes a brief and a new plan version', () => {
-  const versionBefore = planner.activePlan(goalId).version;
-  const res = brief.runWeekly({ goalId, asOf: TODAY });
+test('weekly run writes a brief and a new plan version', async () => {
+  const versionBefore = (await planner.activePlan(goalId)).version;
+  const res = await brief.runWeekly({ goalId, asOf: TODAY });
   assert.ok(res.replanned.version > versionBefore);
   assert.equal(res.brief.week_start, weekStart(TODAY));
   assert.ok(res.brief.body_md.length > 200);
   // Re-running the same week updates in place rather than duplicating.
-  brief.runWeekly({ goalId, asOf: TODAY });
-  const count = db.prepare('SELECT COUNT(*) c FROM briefs WHERE week_start = ?').get(weekStart(TODAY)).c;
-  assert.equal(count, 1);
+  await brief.runWeekly({ goalId, asOf: TODAY });
+  const count = await db.prepare('SELECT COUNT(*) c FROM briefs WHERE week_start = ?').get(weekStart(TODAY));
+  assert.equal(count.c, 1);
 });

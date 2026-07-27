@@ -178,50 +178,54 @@ export function parseTags(text) {
  * Create/refresh ride_logs rows from tags. Manual edits win: a row whose
  * source is 'manual' is never overwritten by tag parsing.
  */
-function applyTags(activity) {
+async function applyTags(activity) {
   const tags = parseTags(`${activity.name || ''} ${activity.description || ''}`);
   if (!tags) return 0;
-  const existing = db.prepare('SELECT * FROM ride_logs WHERE activity_id = ?').get(activity.id);
+  const existing = await db.prepare('SELECT * FROM ride_logs WHERE activity_id = ?').get(activity.id);
   const now = new Date().toISOString();
   if (!existing) {
-    db.prepare(
-      `INSERT INTO ride_logs (activity_id, date, position, drops_minutes, back_pain, rpe,
+    await db
+      .prepare(
+        `INSERT INTO ride_logs (activity_id, date, position, drops_minutes, back_pain, rpe,
         cycle_phase, carb_g_per_h, source, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?,'tags',?,?)`
-    ).run(
-      activity.id,
-      activity.date,
-      tags.position ?? null,
-      tags.drops_minutes ?? null,
-      tags.back_pain ?? null,
-      tags.rpe ?? null,
-      tags.cycle_phase ?? null,
-      tags.carb_g_per_h ?? null,
-      now,
-      now
-    );
+      )
+      .run(
+        activity.id,
+        activity.date,
+        tags.position ?? null,
+        tags.drops_minutes ?? null,
+        tags.back_pain ?? null,
+        tags.rpe ?? null,
+        tags.cycle_phase ?? null,
+        tags.carb_g_per_h ?? null,
+        now,
+        now
+      );
     return 1;
   }
   if (existing.source === 'manual') return 0;
-  db.prepare(
-    `UPDATE ride_logs SET position=?, drops_minutes=?, back_pain=?, rpe=?, cycle_phase=?,
+  await db
+    .prepare(
+      `UPDATE ride_logs SET position=?, drops_minutes=?, back_pain=?, rpe=?, cycle_phase=?,
        carb_g_per_h=?, updated_at=? WHERE id=?`
-  ).run(
-    tags.position ?? existing.position,
-    tags.drops_minutes ?? existing.drops_minutes,
-    tags.back_pain ?? existing.back_pain,
-    tags.rpe ?? existing.rpe,
-    tags.cycle_phase ?? existing.cycle_phase,
-    tags.carb_g_per_h ?? existing.carb_g_per_h,
-    now,
-    existing.id
-  );
+    )
+    .run(
+      tags.position ?? existing.position,
+      tags.drops_minutes ?? existing.drops_minutes,
+      tags.back_pain ?? existing.back_pain,
+      tags.rpe ?? existing.rpe,
+      tags.cycle_phase ?? existing.cycle_phase,
+      tags.carb_g_per_h ?? existing.carb_g_per_h,
+      now,
+      existing.id
+    );
   return 1;
 }
 
 export async function syncFromIntervals({ daysBack, key } = {}) {
   const started = new Date().toISOString();
-  const back = daysBack ?? parseInt(getSetting('sync_days_back', '400'), 10);
+  const back = daysBack ?? parseInt(await getSetting('sync_days_back', '400'), 10);
   const newest = addDays(today(), 1);
   const oldest = addDays(today(), -Math.abs(back));
 
@@ -235,7 +239,7 @@ export async function syncFromIntervals({ daysBack, key } = {}) {
     try {
       const a = await fetchAthlete({ key });
       if (a) {
-        upsertAthlete({
+        await upsertAthlete({
           id: a.id != null ? String(a.id) : undefined,
           name: a.name ?? null,
           sex: a.sex ?? null,
@@ -255,8 +259,8 @@ export async function syncFromIntervals({ daysBack, key } = {}) {
     for (const raw of acts) {
       const a = normaliseActivity(raw);
       if (!a.date) continue;
-      insAct.run(a);
-      applyTags(a);
+      await insAct.run(a);
+      await applyTags(a);
       nAct++;
     }
 
@@ -266,27 +270,27 @@ export async function syncFromIntervals({ daysBack, key } = {}) {
       for (const raw of well) {
         const w = normaliseWellness(raw);
         if (!w.date) continue;
-        insWell.run(w);
+        await insWell.run(w);
         nWell++;
       }
     } catch (e) {
       message += `wellness: ${e.message}; `;
     }
 
-    setSetting('last_sync_at', new Date().toISOString());
+    await setSetting('last_sync_at', new Date().toISOString());
   } catch (e) {
     ok = 0;
     message += e.message;
   }
 
-  db.prepare(
-    'INSERT INTO sync_runs (started_at, finished_at, ok, activities, wellness, message) VALUES (?,?,?,?,?,?)'
-  ).run(started, new Date().toISOString(), ok, nAct, nWell, message || null);
+  await db
+    .prepare('INSERT INTO sync_runs (started_at, finished_at, ok, activities, wellness, message) VALUES (?,?,?,?,?,?)')
+    .run(started, new Date().toISOString(), ok, nAct, nWell, message || null);
 
   if (!ok) throw new Error(message);
   return { activities: nAct, wellness: nWell, oldest, newest, message: message || null };
 }
 
-export function lastSync() {
-  return db.prepare('SELECT * FROM sync_runs ORDER BY id DESC LIMIT 1').get() || null;
+export async function lastSync() {
+  return (await db.prepare('SELECT * FROM sync_runs ORDER BY id DESC LIMIT 1').get()) || null;
 }

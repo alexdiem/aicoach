@@ -33,7 +33,7 @@ const commands = {
   async key() {
     const k = args[0];
     if (!k) return console.error('usage: node server/cli.js key <APIKEY>');
-    setSetting('intervals_api_key', k);
+    await setSetting('intervals_api_key', k);
     console.log('API key stored.');
   },
 
@@ -44,43 +44,43 @@ const commands = {
     if (flag('maxhr')) patch.max_hr = parseInt(flag('maxhr'), 10);
     if (flag('lthr')) patch.threshold_hr = parseInt(flag('lthr'), 10);
     if (flag('age')) patch.age = parseInt(flag('age'), 10);
-    console.log(upsertAthlete(patch));
+    console.log(await upsertAthlete(patch));
   },
 
   async replan() {
-    const goal = activeGoal();
+    const goal = await activeGoal();
     if (!goal) return console.error('No active goal.');
-    const r = regenerate(goal.id, flag('reason', 'cli'));
+    const r = await regenerate(goal.id, flag('reason', 'cli'));
     console.log(`Plan v${r.version} for "${goal.name}": ${r.result.weeks.length} weeks, peak CTL ${r.result.targets.achievableCtl} (target ${r.result.targets.targetCtl}).`);
     for (const n of r.result.notes) console.log(`  • ${n.text}`);
   },
 
   async brief() {
-    const b = buildBrief({ asOf: flag('week', today()) });
+    const b = await buildBrief({ asOf: flag('week', today()) });
     console.log(b.body);
   },
 
   async weekly() {
-    const res = runWeekly({ asOf: flag('week', today()) });
+    const res = await runWeekly({ asOf: flag('week', today()) });
     console.log(res.brief.body_md);
   },
 
   async status() {
-    const goal = activeGoal();
-    const fit = currentFitness();
-    console.log('athlete:', getAthlete());
+    const goal = await activeGoal();
+    const fit = await currentFitness();
+    console.log('athlete:', await getAthlete());
     console.log('fitness:', fit);
-    console.log('api key set:', !!getSetting('intervals_api_key'));
+    console.log('api key set:', !!(await getSetting('intervals_api_key')));
     if (goal) {
-      const plan = activePlan(goal.id);
-      console.log(`goal: ${goal.name} on ${goal.event_date} (plan v${plan?.version}, ${plan ? planWeeks(plan.id).length : 0} weeks)`);
+      const plan = await activePlan(goal.id);
+      console.log(`goal: ${goal.name} on ${goal.event_date} (plan v${plan?.version}, ${plan ? (await planWeeks(plan.id)).length : 0} weeks)`);
     } else {
       console.log('goal: none');
     }
   },
 
   async backpain() {
-    const c = painCorrelation({ days: parseInt(flag('days', '365'), 10) });
+    const c = await painCorrelation({ days: parseInt(flag('days', '365'), 10) });
     console.log(c.headline);
     console.log(`\nHigh-IF rides (IF ≥ ${c.ifThreshold}):`);
     for (const row of c.table.highIf.byPosition) {

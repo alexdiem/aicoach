@@ -23,8 +23,9 @@ the reason, and the alternative that was not taken, and it shows up in the UI un
 npm start                      # → http://127.0.0.1:8787
 ```
 
-No dependencies, no build step, no `npm install`. It needs Node ≥ 22.5 for the
-built-in `node:sqlite`.
+No build step and no `npm install` needed for local use. It needs Node ≥ 22.5 for the
+built-in `node:sqlite`. (The one npm dependency in `package.json`, `@libsql/client`, is
+only for the Vercel+Turso deployment path below — local `npm start` never imports it.)
 
 Then, in the app:
 
@@ -44,8 +45,75 @@ AICOACH_DB=data/demo.db npm start
 
 ## Where your data lives
 
-A single SQLite file, `data/aicoach.db` (override with `AICOACH_DB`). The API key is
-stored there and is only ever sent to intervals.icu. Nothing leaves the machine.
+Locally: a single SQLite file, `data/aicoach.db` (override with `AICOACH_DB`). The API
+key is stored there and is only ever sent to intervals.icu. Nothing leaves the machine.
+
+Deployed on Vercel: a Turso (libSQL) database — see **Deploying to Vercel** below for why.
+
+## Deploying to Vercel
+
+Vercel functions are stateless and serverless: there's no persistent local disk to put
+a SQLite file on, and no long-running process for the background scheduler to live in.
+So the deployment differs from local use in two ways:
+
+- **Storage** moves from the local SQLite file to **Turso** (libSQL) — chosen specifically
+  because libSQL is SQLite-compatible, so the schema and almost every query in this repo
+  run completely unchanged. The only real change was sync → async database calls
+  throughout the server (see `server/dbdriver.js`); nothing about the SQL itself differs
+  between the two backends. `@libsql/client` is the one npm dependency this app has, and
+  it's only ever imported when a Turso URL is configured — local `npm start` never needs
+  it installed.
+- **The background scheduler** (periodic intervals.icu sync + Monday replan) moves from
+  a `setInterval` loop to **Vercel Cron**, configured in `vercel.json` to hit `/api/cron`
+  on a schedule. That endpoint runs the exact same `runScheduledJobs()` logic the local
+  loop calls (`server/scheduler.js`) — nothing is reimplemented for the deployed path.
+
+Everything else — the plan generator, the brief's rule engine, the back-pain
+correlation, the frontend — is the identical code running in both places.
+
+### One-time setup
+
+1. **Create a Turso database** (free tier is enough for personal use):
+   ```bash
+   npx @tursodatabase/cli auth login
+   npx @tursodatabase/cli db create aicoach
+   npx @tursodatabase/cli db show aicoach --url          # → TURSO_DATABASE_URL
+   npx @tursodatabase/cli db tokens create aicoach        # → TURSO_AUTH_TOKEN
+   ```
+   (Or use the Turso web dashboard at [turso.tech](https://turso.tech) — same two values.)
+
+2. **Deploy to Vercel** (`vercel` CLI, or connect the GitHub repo in the Vercel
+   dashboard). The project needs no build step — `vercel.json` already points Vercel at
+   `public/` for static assets and `api/` for the serverless functions.
+
+3. **Set environment variables** in the Vercel project (Settings → Environment Variables):
+
+   | Variable | Value | Required |
+   | --- | --- | --- |
+   | `TURSO_DATABASE_URL` | from step 1 | yes — without it the app has nowhere to persist data |
+   | `TURSO_AUTH_TOKEN` | from step 1 | yes |
+   | `CRON_SECRET` | any random string | recommended — without it `/api/cron` is unauthenticated (harmless, but locking it down is one field) |
+
+4. **Redeploy** after setting the env vars (Vercel doesn't hot-reload environment
+   changes into a running deployment). Then open the deployed URL and go to **Settings**
+   to paste your intervals.icu API key, same as the local setup — it's stored in Turso now,
+   not the local file, but the UI is identical.
+
+### What to know about the deployed version
+
+- **Cron frequency**: `vercel.json` requests `/api/cron` every 6 hours. Vercel's **Hobby**
+  plan restricts cron jobs to once per day — if you're on Hobby, change the schedule to
+  something like `"0 6 * * *"` (daily at 06:00 UTC) or the deploy will reject the config.
+  Pro plans can keep the 6-hourly default or go tighter.
+- **Latency**: every database call is now a network round trip to Turso instead of a
+  local file read. The brief endpoint batches its independent reads with `Promise.all`
+  rather than awaiting them one at a time for exactly this reason (see the top of
+  `buildBrief` in `server/brief.js`), but a cold Vercel function plus a few round trips
+  will still feel slower than the instant local version — expect low hundreds of ms
+  rather than the local single-digit ms.
+- **Local dev is unaffected.** `npm start` never looks at `TURSO_DATABASE_URL`; it only
+  matters once that variable is set, which local development never does unless you set
+  it yourself.
 
 ## The core loop
 
@@ -125,25 +193,32 @@ Without cycle data, only the strength row applies; the rest of the plan is pure 
 
 ## Stack
 
-Node's built-in HTTP server and `node:sqlite`, vanilla ES-module frontend, inline SVG
-charts. Zero npm dependencies, deliberately — it's a personal tool and a dependency tree
-is a liability, not a feature.
+Node's built-in HTTP server, vanilla ES-module frontend, inline SVG charts. `node:sqlite`
+locally; Turso (libSQL) when deployed to Vercel (see above) — `@libsql/client` is the one
+npm dependency this app has, and it's only ever imported for that path. No build step,
+no framework, no bundler.
 
 ```
 server/
-  db.js         schema + settings
-  intervals.js  intervals.icu API client
-  sync.js       ingestion, normalisation, #tag parsing
-  metrics.js    CTL/ATL/TSB, EF trend, VI drift, W'bal, distribution, compliance
-  cycle.js      optional menstrual-cycle model + Sims adjustments
-  planner.js    event demand model, phase allocation, load ramp, Sims overlays
-  brief.js      the weekly rule engine and its markdown output
-  backpain.js   position/pain cross-tabs
-  api.js        JSON routes
-  index.js      HTTP server + static
-  scheduler.js  periodic sync + Monday replan
-  cli.js        terminal entry points
-public/         index.html, app.js, styles.css
+  db.js             schema + settings, backend-agnostic
+  dbdriver.js       the sqlite / Turso driver abstraction
+  requestHandler.js shared route-dispatch used by both entry points below
+  intervals.js      intervals.icu API client
+  sync.js           ingestion, normalisation, #tag parsing
+  metrics.js        CTL/ATL/TSB, EF trend, VI drift, W'bal, distribution, compliance
+  cycle.js          optional menstrual-cycle model + Sims adjustments
+  planner.js        event demand model, phase allocation, load ramp, Sims overlays
+  brief.js          the weekly rule engine and its markdown output
+  backpain.js       position/pain cross-tabs
+  api.js            JSON routes (the route table itself)
+  index.js          local entry point: HTTP server + static + background scheduler
+  scheduler.js      periodic sync + Monday replan (shared by both entry points)
+  cli.js            terminal entry points
+api/
+  [...slug].js      Vercel entry point: same route table, no scheduler
+  cron.js           Vercel Cron target — calls the same scheduler logic once per invocation
+public/             index.html, app.js, styles.css
+vercel.json         static output dir + cron schedule
 ```
 
 ## CLI

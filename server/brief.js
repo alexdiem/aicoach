@@ -16,29 +16,41 @@ import { hasCycleData, phaseForWeek, simsAdjustment } from './cycle.js';
 
 const SEV_ORDER = { critical: 0, warn: 1, info: 2, good: 3 };
 
-export function buildBrief({ goalId = null, asOf = today() } = {}) {
-  const goal = goalId ? db.prepare('SELECT * FROM goals WHERE id = ?').get(goalId) : activeGoal();
-  const plan = goal ? activePlan(goal.id) : null;
-  const ws = weekStart(asOf);
-  const thisWeek = plan ? weekForDate(plan.id, ws) : null;
-  const lastWs = addDays(ws, -7);
-  const lastPlanWeek = plan ? weekForDate(plan.id, lastWs) : null;
-  const lastActual = weekActuals(lastWs);
-  const comparison = lastPlanWeek ? compareWeek(lastPlanWeek, lastActual) : null;
+async function isCycleOn() {
+  return (await getSetting('sims_enabled', '1')) === '1' && (await hasCycleData());
+}
 
-  const fit = currentFitness(asOf);
-  const ramp = rampRate(asOf);
-  const ef = efTrend(asOf);
-  const vi = viDrift(addDays(asOf, -28), asOf);
-  const wbal = wbalRecoveryFlag(asOf);
-  const weeks8 = recentWeeks(asOf, 8);
-  const cycleOn = getSetting('sims_enabled', '1') === '1' && hasCycleData();
-  const cycleWeek = cycleOn ? phaseForWeek(ws) : null;
+export async function buildBrief({ goalId = null, asOf = today() } = {}) {
+  const goal = goalId ? await db.prepare('SELECT * FROM goals WHERE id = ?').get(goalId) : await activeGoal();
+  const ws = weekStart(asOf);
+  const lastWs = addDays(ws, -7);
+
+  // Everything in this batch is independent of everything else in it — fired
+  // together rather than awaited one at a time, since a networked DB's round
+  // trip (not local disk I/O) is the dominant cost here once deployed.
+  const [plan, fit, ramp, ef, vi, wbal, weeks8, fuel, painEvents, athlete, lastActual, cycleOn] = await Promise.all([
+    goal ? activePlan(goal.id) : null,
+    currentFitness(asOf),
+    rampRate(asOf),
+    efTrend(asOf),
+    viDrift(addDays(asOf, -28), asOf),
+    wbalRecoveryFlag(asOf),
+    recentWeeks(asOf, 8),
+    fuellingSignals(asOf),
+    recentPain({ asOf, days: 28 }),
+    getAthlete(),
+    weekActuals(lastWs),
+    isCycleOn(),
+  ]);
+
+  const [thisWeek, lastPlanWeek, cycleWeek, pain] = await Promise.all([
+    plan ? weekForDate(plan.id, ws) : null,
+    plan ? weekForDate(plan.id, lastWs) : null,
+    cycleOn ? phaseForWeek(ws) : null,
+    painFlag({ asOf }),
+  ]);
+  const comparison = lastPlanWeek ? compareWeek(lastPlanWeek, lastActual) : null;
   const cycleAdj = cycleWeek?.phase ? simsAdjustment(cycleWeek.phase) : null;
-  const fuel = fuellingSignals(asOf);
-  const pain = painFlag({ asOf });
-  const painEvents = recentPain({ asOf, days: 28 });
-  const athlete = getAthlete();
 
   const flags = [];
   const actions = [];
@@ -57,8 +69,8 @@ export function buildBrief({ goalId = null, asOf = today() } = {}) {
 
   // ------------------------------------------------------------------- Ramp
   const rampCap = thisWeek && (thisWeek.phase.startsWith('build') || thisWeek.phase === 'peak')
-    ? getSettingNum('max_ramp_build', 4)
-    : getSettingNum('max_ramp_base', 6);
+    ? await getSettingNum('max_ramp_build', 4)
+    : await getSettingNum('max_ramp_base', 6);
   if (ramp != null && ramp > rampCap) {
     flags.push({
       id: 'ramp',
@@ -100,11 +112,16 @@ export function buildBrief({ goalId = null, asOf = today() } = {}) {
       actions.push(`Watch EF: ${signed(ef.changePct)}% vs baseline. If it's still negative after this week's recovery days, drop the next block's volume by 20%.`);
     }
   } else if (ef.recentN + ef.baselineN > 0) {
+    const [ifMin, ifMax, minMin] = await Promise.all([
+      getSettingNum('ef_if_min', 0.55),
+      getSettingNum('ef_if_max', 0.88),
+      getSettingNum('ef_min_minutes', 45),
+    ]);
     flags.push({
       id: 'ef-thin',
       severity: 'info',
       title: 'Efficiency factor',
-      text: `Not enough IF-matched steady rides to trend EF: ${ef.recentN} in the last ${ef.recentDays} days, ${ef.baselineN} in the ${ef.baselineDays} before. Need ≥3 in each window at IF ${getSettingNum('ef_if_min', 0.55)}–${getSettingNum('ef_if_max', 0.88)} lasting ≥${getSettingNum('ef_min_minutes', 45)} min.`,
+      text: `Not enough IF-matched steady rides to trend EF: ${ef.recentN} in the last ${ef.recentDays} days, ${ef.baselineN} in the ${ef.baselineDays} before. Need ≥3 in each window at IF ${ifMin}–${ifMax} lasting ≥${minMin} min.`,
       numbers: { recentN: ef.recentN, baselineN: ef.baselineN },
     });
   }
@@ -221,7 +238,7 @@ export function buildBrief({ goalId = null, asOf = today() } = {}) {
   const adjustment = decideAdjustment({ thisWeek, fit, tsb, ef, ramp, rampCap, underRecovery });
   let week = thisWeek;
   if (adjustment && thisWeek && plan) {
-    week = applyAdjustment(thisWeek, adjustment);
+    week = await applyAdjustment(thisWeek, adjustment);
     governing.push({
       decision: `in-week adjustment (${adjustment.id})`,
       framework: adjustment.framework,
@@ -348,7 +365,7 @@ function daysToRecoverTsb(fit, target = -15) {
  * The key sessions and the long ride move with it — a week capped at Z2 that
  * still lists tempo intervals is worse than no advice at all.
  */
-function applyAdjustment(weekRow, adj) {
+async function applyAdjustment(weekRow, adj) {
   const targetTss = adj.absoluteTss != null
     ? adj.absoluteTss
     : round(weekRow.target_tss * (adj.tssFactor ?? 1), 0);
@@ -405,14 +422,16 @@ function applyAdjustment(weekRow, adj) {
   let projected = adj.ctlNow ?? weekRow.projected_ctl ?? 0;
   for (let d = 0; d < 7; d++) projected += (targetTss / 7 - projected) / 42;
 
-  db.prepare(
-    `UPDATE plan_weeks SET target_tss=?, target_hours=?, z1_2_pct=?, z3_4_pct=?, z5_pct=?,
+  await db
+    .prepare(
+      `UPDATE plan_weeks SET target_tss=?, target_hours=?, z1_2_pct=?, z3_4_pct=?, z5_pct=?,
        long_session_h=?, long_session_tss=?, key_sessions_json=?, projected_ctl=?, notes=?, governing_json=?
      WHERE id = ?`
-  ).run(
-    targetTss, hours, z12, z34, z5, longH, round(longH * 40, 0),
-    JSON.stringify(sessions), round(projected, 1), note, JSON.stringify(governing), weekRow.id
-  );
+    )
+    .run(
+      targetTss, hours, z12, z34, z5, longH, round(longH * 40, 0),
+      JSON.stringify(sessions), round(projected, 1), note, JSON.stringify(governing), weekRow.id
+    );
 
   return db.prepare('SELECT * FROM plan_weeks WHERE id = ?').get(weekRow.id);
 }
@@ -462,8 +481,6 @@ function buildDirective({ adjustment, week, thisWeek, fit, tsb, ramp, rampCap, c
       return {
         id: 'ramp-over-cap',
         severity: 'warn',
-        tsb,
-        ctlNow,
         framework: 'Friel',
         headline: `Hold at ${week.target_tss} TSS this week — CTL ramped ${signed(ramp)} against a ${rampCap}/wk cap.`,
         text: `CTL went from ${round((fit.ctl || 0) - (ramp || 0), 1)} to ${fit.ctl} in seven days. The plan asked for ${thisWeek.target_tss} TSS; that is now ${week.target_tss} (maintenance at CTL ${fit.ctl} × 7). Consolidate this week, and the ramp resumes next week from a CTL that has actually been absorbed.`,
@@ -634,9 +651,10 @@ function safeJson(s) {
   }
 }
 
-export function saveBrief(brief) {
-  db.prepare(
-    `INSERT INTO briefs (plan_id, goal_id, week_start, generated_at, phase, headline, body_md,
+export async function saveBrief(brief) {
+  await db
+    .prepare(
+      `INSERT INTO briefs (plan_id, goal_id, week_start, generated_at, phase, headline, body_md,
        metrics_json, flags_json, actions_json, governing_json)
      VALUES (?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(week_start) DO UPDATE SET
@@ -644,19 +662,20 @@ export function saveBrief(brief) {
        phase=excluded.phase, headline=excluded.headline, body_md=excluded.body_md,
        metrics_json=excluded.metrics_json, flags_json=excluded.flags_json,
        actions_json=excluded.actions_json, governing_json=excluded.governing_json`
-  ).run(
-    brief.planId, brief.goalId, brief.weekStart, brief.generatedAt, brief.phase, brief.headline, brief.body,
-    JSON.stringify(brief.metrics), JSON.stringify(brief.flags), JSON.stringify(brief.actions),
-    JSON.stringify(brief.governing)
-  );
+    )
+    .run(
+      brief.planId, brief.goalId, brief.weekStart, brief.generatedAt, brief.phase, brief.headline, brief.body,
+      JSON.stringify(brief.metrics), JSON.stringify(brief.flags), JSON.stringify(brief.actions),
+      JSON.stringify(brief.governing)
+    );
   return getBrief(brief.weekStart);
 }
 
-export function getBrief(weekStartDate) {
-  return db.prepare('SELECT * FROM briefs WHERE week_start = ?').get(weekStartDate) || null;
+export async function getBrief(weekStartDate) {
+  return (await db.prepare('SELECT * FROM briefs WHERE week_start = ?').get(weekStartDate)) || null;
 }
 
-export function listBriefs(limit = 52) {
+export async function listBriefs(limit = 52) {
   return db.prepare('SELECT * FROM briefs ORDER BY week_start DESC LIMIT ?').all(limit);
 }
 
@@ -664,18 +683,18 @@ export function listBriefs(limit = 52) {
  * The weekly cycle: regenerate the plan from actuals, then write the brief.
  * Called by the scheduler on Mondays and on demand from the UI.
  */
-export function runWeekly({ goalId = null, asOf = today(), replan = true } = {}) {
-  const goal = goalId ? db.prepare('SELECT * FROM goals WHERE id = ?').get(goalId) : activeGoal();
+export async function runWeekly({ goalId = null, asOf = today(), replan = true } = {}) {
+  const goal = goalId ? await db.prepare('SELECT * FROM goals WHERE id = ?').get(goalId) : await activeGoal();
   let replanned = null;
   if (goal && replan) {
-    const adapt = adaptationInputs(asOf);
+    const adapt = await adaptationInputs(asOf);
     // Regenerate whenever the plan's assumptions have moved: CTL drift,
     // compliance drift, or an under-recovery signature. Weeks before the
     // current one are carried over, so the original prescription is preserved.
-    replanned = regenerate(goal.id, buildReplanReason(adapt));
+    replanned = await regenerate(goal.id, buildReplanReason(adapt));
   }
-  const brief = buildBrief({ goalId: goal?.id ?? null, asOf });
-  const saved = saveBrief(brief);
+  const brief = await buildBrief({ goalId: goal?.id ?? null, asOf });
+  const saved = await saveBrief(brief);
   return { brief: saved, replanned: replanned ? { planId: replanned.planId, version: replanned.version } : null };
 }
 
