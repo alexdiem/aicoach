@@ -1,0 +1,19 @@
+{
+  "name": "aicoach",
+  "version": "1.0.0",
+  "description": "Personal endurance training planner: Friel periodization + Sims female-physiology overlays, driven by intervals.icu data.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node --no-warnings=ExperimentalWarning server/index.js",
+    "dev": "node --no-warnings=ExperimentalWarning --watch server/index.js",
+    "sync": "node --no-warnings=ExperimentalWarning server/cli.js sync",
+    "replan": "node --no-warnings=ExperimentalWarning server/cli.js replan",
+    "brief": "node --no-warnings=ExperimentalWarning server/cli.js brief",
+    "test": "node --no-warnings=ExperimentalWarning --test test/*.test.js"
+  },
+  "dependencies": {}
+}
