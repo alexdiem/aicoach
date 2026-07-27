@@ -1,5 +1,10 @@
 {
   "outputDirectory": "public",
+  "routes": [
+    { "src": "/api/cron", "dest": "/api/cron" },
+    { "src": "/api/(.*)", "dest": "/api" },
+    { "handle": "filesystem" }
+  ],
   "crons": [
     { "path": "/api/cron", "schedule": "0 6 * * *" }
   ]

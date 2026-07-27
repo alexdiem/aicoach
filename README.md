@@ -217,25 +217,45 @@ server/
   scheduler.js      periodic sync + Monday replan (shared by both entry points)
   cli.js            terminal entry points
 api/
-  <mirrors every /api/* path the frontend calls, one file each — see below>
-  cron.js           Vercel Cron target
+  index.js          Vercel entry point for the whole API surface (one function)
+  cron.js           Vercel Cron target (a separate function, routed explicitly)
 public/             index.html, app.js, styles.css
-vercel.json         static output dir + cron schedule
+vercel.json         static output dir, /api/* routing, cron schedule
 ```
 
-**Why one file per route, not a catch-all:** an earlier version tried a single
-`api/[...slug].js` catch-all (Vercel's documented convention for "one function
-handles everything under this path"), and then a `vercel.json` rewrite rule
-pointing every `/api/*` request at one function. Neither behaved as documented
-in practice — single-segment paths like `/api/status` resolved, but anything
-with two or more path segments 404'd at Vercel's platform routing layer before
-the function code ever ran. Rather than keep chasing that, every path the
-frontend actually calls now has a real, literal file under `api/` (e.g.
-`api/plan/adaptation.js`, `api/goals/[id].js` for the one genuinely dynamic
-segment). Each file is a few lines forwarding to the same shared dispatcher in
-`server/requestHandler.js` — the routing logic itself still lives entirely in
-`server/api.js`'s route table, unchanged; the per-file structure only exists
-so Vercel has something concrete to resolve at every exact path.
+**Why routing to two functions via `vercel.json`'s `routes`, not per-path files
+or a bracket catch-all:** two things went wrong on the way here, in order:
+
+1. `api/[...slug].js` (Vercel's bracket-based catch-all file convention) didn't
+   behave as documented — single-segment paths like `/api/status` resolved,
+   but anything with two or more path segments 404'd at Vercel's platform
+   routing layer before the function code ever ran.
+2. Replacing it with a `vercel.json` **`rewrites`** rule pointing every
+   `/api/*` request at one function hit the exact same symptom.
+3. Giving every path its own literal file (24 functions) sidestepped both
+   routing issues, but hit a real, different wall: **Vercel's Hobby plan caps
+   a deployment at 12 Serverless Functions**, so that approach can't ship on
+   Hobby regardless of whether the routing itself would have worked.
+
+The fix that actually holds: two functions total (`api/index.js` for
+everything in `server/api.js`'s route table, `api/cron.js` for the Cron
+target), routed via `vercel.json`'s **legacy `routes` array** — a lower-level,
+more explicit mechanism than `rewrites`, evaluated unconditionally in the
+listed order rather than as a fallback:
+```json
+"routes": [
+  { "src": "/api/cron", "dest": "/api/cron" },
+  { "src": "/api/(.*)", "dest": "/api" },
+  { "handle": "filesystem" }
+]
+```
+The first two rules force every `/api/*` request through one of the two
+functions before anything else is tried; `{"handle": "filesystem"}` then lets
+everything else (the static frontend) fall through to normal static-file
+resolution from `outputDirectory`. The routing logic itself is unchanged —
+it still lives entirely in `server/api.js`'s route table via `matchRoute`;
+these two files just adapt Vercel's request/response shape to that shared
+dispatcher (`server/requestHandler.js`).
 
 ## CLI
 
