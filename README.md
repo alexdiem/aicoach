@@ -101,10 +101,12 @@ correlation, the frontend — is the identical code running in both places.
 
 ### What to know about the deployed version
 
-- **Cron frequency**: `vercel.json` requests `/api/cron` every 6 hours. Vercel's **Hobby**
-  plan restricts cron jobs to once per day — if you're on Hobby, change the schedule to
-  something like `"0 6 * * *"` (daily at 06:00 UTC) or the deploy will reject the config.
-  Pro plans can keep the 6-hourly default or go tighter.
+- **Cron frequency**: `vercel.json` defaults to `/api/cron` once daily (`"0 6 * * *"`,
+  06:00 UTC) because Vercel's **Hobby** plan rejects the deploy outright for anything
+  more frequent than daily. If you're on a Pro plan and want more frequent syncing,
+  tighten this to e.g. `"0 */6 * * *"` (every 6 hours, matching the local scheduler's
+  default) — Hobby will fail to deploy with that schedule, so only change it if you've
+  confirmed you're on Pro.
 - **Latency**: every database call is now a network round trip to Turso instead of a
   local file read. The brief endpoint batches its independent reads with `Promise.all`
   rather than awaiting them one at a time for exactly this reason (see the top of
