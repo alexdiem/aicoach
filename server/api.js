@@ -19,36 +19,42 @@ import { cycleSummary, hasCycleData, phaseFor, phaseForWeek } from './cycle.js';
 
 const MASK = '••••••••';
 
-function maskedSettings() {
-  const s = allSettings();
+async function maskedSettings() {
+  const s = await allSettings();
   return { ...s, intervals_api_key: s.intervals_api_key ? MASK : '' };
 }
 
-function requireGoal(query) {
+async function requireGoal(query) {
   const id = query.goalId ? parseInt(query.goalId, 10) : null;
-  const goal = id ? db.prepare('SELECT * FROM goals WHERE id = ?').get(id) : activeGoal();
-  return goal;
+  return id ? db.prepare('SELECT * FROM goals WHERE id = ?').get(id) : activeGoal();
 }
 
 export const routes = {
   'GET /api/status': async () => {
-    const goal = activeGoal();
-    const plan = goal ? activePlan(goal.id) : null;
-    const fit = currentFitness();
+    const goal = await activeGoal();
+    const [plan, fit, settings, hasApiKey, athlete, sync, cycleDataPresent, actCount, rideCount, briefCount] = await Promise.all([
+      goal ? activePlan(goal.id) : null,
+      currentFitness(),
+      maskedSettings(),
+      getSetting('intervals_api_key'),
+      getAthlete(),
+      lastSync(),
+      hasCycleData(),
+      db.prepare('SELECT COUNT(*) c FROM activities').get(),
+      db.prepare('SELECT COUNT(*) c FROM ride_logs').get(),
+      db.prepare('SELECT COUNT(*) c FROM briefs').get(),
+    ]);
+    const ramp = await rampRate();
     return {
-      settings: maskedSettings(),
-      hasApiKey: !!getSetting('intervals_api_key'),
-      athlete: getAthlete(),
-      lastSync: lastSync(),
+      settings,
+      hasApiKey: !!hasApiKey,
+      athlete,
+      lastSync: sync,
       goal,
       plan: plan ? { ...plan, notes: safeJson(plan.notes_json), params: safeJson(plan.params_json) } : null,
-      fitness: { ...fit, ramp: rampRate() },
-      cycleDataPresent: hasCycleData(),
-      counts: {
-        activities: db.prepare('SELECT COUNT(*) c FROM activities').get().c,
-        rideLogs: db.prepare('SELECT COUNT(*) c FROM ride_logs').get().c,
-        briefs: db.prepare('SELECT COUNT(*) c FROM briefs').get().c,
-      },
+      fitness: { ...fit, ramp },
+      cycleDataPresent,
+      counts: { activities: actCount.c, rideLogs: rideCount.c, briefs: briefCount.c },
       today: today(),
     };
   },
@@ -58,15 +64,14 @@ export const routes = {
   'POST /api/settings': async ({ body }) => {
     for (const [k, v] of Object.entries(body || {})) {
       if (k === 'intervals_api_key' && (v === MASK || v === '')) continue; // don't clobber with the mask
-      setSetting(k, v);
+      await setSetting(k, v);
     }
     return maskedSettings();
   },
 
   'POST /api/settings/test': async ({ body }) => {
-    const key = body?.key && body.key !== MASK ? body.key : getSetting('intervals_api_key');
-    const res = await testConnection(key);
-    return res;
+    const key = body?.key && body.key !== MASK ? body.key : await getSetting('intervals_api_key');
+    return testConnection(key);
   },
 
   'POST /api/athlete': async ({ body }) => upsertAthlete(body || {}),
@@ -74,7 +79,7 @@ export const routes = {
   // --- sync ----------------------------------------------------------------
   'POST /api/sync': async ({ body }) => {
     const res = await syncFromIntervals({ daysBack: body?.daysBack ? parseInt(body.daysBack, 10) : undefined });
-    return { ...res, lastSync: lastSync() };
+    return { ...res, lastSync: await lastSync() };
   },
 
   'GET /api/sync/history': async () => db.prepare('SELECT * FROM sync_runs ORDER BY id DESC LIMIT 20').all(),
@@ -86,7 +91,7 @@ export const routes = {
     const g = body || {};
     if (!g.name || !g.event_date) throw httpError(400, 'name and event_date are required');
     const start = g.start_date || today();
-    const info = db
+    const info = await db
       .prepare(
         `INSERT INTO goals (name, kind, sport, event_date, start_date, priority, distance_km, elevation_m,
           est_duration_h, support, terrain, target_metric, target_value, notes, status, created_at)
@@ -99,14 +104,15 @@ export const routes = {
         g.notes || null, new Date().toISOString()
       );
     const goalId = Number(info.lastInsertRowid);
-    const result = generatePlan(goalId, { reason: 'goal created' });
-    const saved = savePlan(result);
-    return { goal: db.prepare('SELECT * FROM goals WHERE id = ?').get(goalId), plan: saved, summary: planSummary(result) };
+    const result = await generatePlan(goalId, { reason: 'goal created' });
+    const saved = await savePlan(result);
+    const goal = await db.prepare('SELECT * FROM goals WHERE id = ?').get(goalId);
+    return { goal, plan: saved, summary: planSummary(result) };
   },
 
   'PATCH /api/goals/:id': async ({ params, body }) => {
     const id = parseInt(params.id, 10);
-    const cur = db.prepare('SELECT * FROM goals WHERE id = ?').get(id);
+    const cur = await db.prepare('SELECT * FROM goals WHERE id = ?').get(id);
     if (!cur) throw httpError(404, 'goal not found');
     const fields = ['name', 'kind', 'sport', 'event_date', 'start_date', 'priority', 'distance_km',
       'elevation_m', 'est_duration_h', 'support', 'terrain', 'target_metric', 'target_value', 'notes', 'status'];
@@ -119,13 +125,13 @@ export const routes = {
       }
     }
     if (sets.length) {
-      db.prepare(`UPDATE goals SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
+      await db.prepare(`UPDATE goals SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
     }
     return db.prepare('SELECT * FROM goals WHERE id = ?').get(id);
   },
 
   'DELETE /api/goals/:id': async ({ params }) => {
-    db.prepare('DELETE FROM goals WHERE id = ?').run(parseInt(params.id, 10));
+    await db.prepare('DELETE FROM goals WHERE id = ?').run(parseInt(params.id, 10));
     return { deleted: true };
   },
 
@@ -141,37 +147,46 @@ export const routes = {
 
   // --- plan ----------------------------------------------------------------
   'GET /api/plan': async ({ query }) => {
-    const goal = requireGoal(query);
+    const goal = await requireGoal(query);
     if (!goal) return { goal: null, plan: null, weeks: [] };
-    const plan = activePlan(goal.id);
+    const plan = await activePlan(goal.id);
     if (!plan) return { goal, plan: null, weeks: [] };
-    const weeks = planWeeks(plan.id).map((w) => ({
-      ...w,
-      key_sessions: safeJson(w.key_sessions_json) || [],
-      governing: safeJson(w.governing_json) || [],
-      cycle: hasCycleData() ? phaseForWeek(w.start_date) : null,
-    }));
+    const [rawWeeks, cycleOn, versions] = await Promise.all([
+      planWeeks(plan.id),
+      hasCycleData(),
+      db.prepare('SELECT id, version, generated_at, reason, active FROM plans WHERE goal_id = ? ORDER BY version DESC').all(goal.id),
+    ]);
+    const weeks = await Promise.all(
+      rawWeeks.map(async (w) => ({
+        ...w,
+        key_sessions: safeJson(w.key_sessions_json) || [],
+        governing: safeJson(w.governing_json) || [],
+        cycle: cycleOn ? await phaseForWeek(w.start_date) : null,
+      }))
+    );
     // Attach actuals for weeks that have already happened.
     const cur = weekStart(today());
-    for (const w of weeks) {
-      if (w.start_date <= cur) {
-        const a = weekActuals(w.start_date);
-        w.actual = { tss: a.tss, hours: a.hours, sessions: a.sessions, distribution: a.distribution };
-        w.comparison = compareWeek(w, a);
-      }
-    }
+    await Promise.all(
+      weeks
+        .filter((w) => w.start_date <= cur)
+        .map(async (w) => {
+          const a = await weekActuals(w.start_date);
+          w.actual = { tss: a.tss, hours: a.hours, sessions: a.sessions, distribution: a.distribution };
+          w.comparison = compareWeek(w, a);
+        })
+    );
     return {
       goal,
       plan: { ...plan, notes: safeJson(plan.notes_json), params: safeJson(plan.params_json) },
       weeks,
-      versions: db.prepare('SELECT id, version, generated_at, reason, active FROM plans WHERE goal_id = ? ORDER BY version DESC').all(goal.id),
+      versions,
     };
   },
 
   'POST /api/plan/regenerate': async ({ body }) => {
-    const goal = requireGoal(body || {});
+    const goal = await requireGoal(body || {});
     if (!goal) throw httpError(400, 'no goal');
-    const res = regenerate(goal.id, body?.reason || 'manual regenerate');
+    const res = await regenerate(goal.id, body?.reason || 'manual regenerate');
     return { planId: res.planId, version: res.version, summary: planSummary(res.result), notes: res.result.notes };
   },
 
@@ -180,16 +195,16 @@ export const routes = {
   // --- briefs --------------------------------------------------------------
   'GET /api/brief': async ({ query }) => {
     const ws = weekStart(query.week || today());
-    const goal = requireGoal(query);
-    const stored = getBrief(ws);
+    const goal = await requireGoal(query);
+    const stored = await getBrief(ws);
     if (stored) return hydrateBrief(stored);
-    const fresh = buildBrief({ goalId: goal?.id ?? null, asOf: query.week || today() });
+    const fresh = await buildBrief({ goalId: goal?.id ?? null, asOf: query.week || today() });
     return { ...fresh, stored: false };
   },
 
   'POST /api/brief/run': async ({ body }) => {
-    const goal = requireGoal(body || {});
-    const res = runWeekly({
+    const goal = await requireGoal(body || {});
+    const res = await runWeekly({
       goalId: goal?.id ?? null,
       asOf: body?.week || today(),
       replan: body?.replan !== false,
@@ -197,23 +212,25 @@ export const routes = {
     return { brief: hydrateBrief(res.brief), replanned: res.replanned };
   },
 
-  'GET /api/briefs': async ({ query }) => listBriefs(parseInt(query.limit || '52', 10)).map(hydrateBrief),
+  'GET /api/briefs': async ({ query }) => (await listBriefs(parseInt(query.limit || '52', 10))).map(hydrateBrief),
 
   // --- activities & logs ---------------------------------------------------
   'GET /api/activities': async ({ query }) => {
     const to = query.to || today();
     const from = query.from || addDays(to, -parseInt(query.days || '42', 10));
-    const acts = activitiesBetween(from, to).map(stripRaw);
-    const logs = new Map(loggedRides(from, to).map((r) => [r.id, r]));
-    return acts
-      .map((a) => ({ ...a, log: logs.get(a.id) || db.prepare('SELECT * FROM ride_logs WHERE activity_id = ?').get(a.id) || null }))
-      .reverse();
+    const [rawActs, rides] = await Promise.all([activitiesBetween(from, to), loggedRides(from, to)]);
+    const acts = rawActs.map(stripRaw);
+    const logs = new Map(rides.map((r) => [r.id, r]));
+    const withLogs = await Promise.all(
+      acts.map(async (a) => ({ ...a, log: logs.get(a.id) || (await db.prepare('SELECT * FROM ride_logs WHERE activity_id = ?').get(a.id)) || null }))
+    );
+    return withLogs.reverse();
   },
 
   'POST /api/ride-logs': async ({ body }) => {
     if (!body?.date && !body?.activity_id) throw httpError(400, 'activity_id or date required');
     if (!body.date && body.activity_id) {
-      const a = db.prepare('SELECT date FROM activities WHERE id = ?').get(body.activity_id);
+      const a = await db.prepare('SELECT date FROM activities WHERE id = ?').get(body.activity_id);
       body.date = a?.date || today();
     }
     return upsertRideLog(body);
@@ -248,8 +265,9 @@ export const routes = {
   'POST /api/daily-logs': async ({ body }) => {
     const d = body || {};
     if (!d.date) throw httpError(400, 'date required');
-    db.prepare(
-      `INSERT INTO daily_logs (date, cycle_phase, cycle_day, period_start, intake_kcal, protein_g, back_pain, symptoms, notes, updated_at)
+    await db
+      .prepare(
+        `INSERT INTO daily_logs (date, cycle_phase, cycle_day, period_start, intake_kcal, protein_g, back_pain, symptoms, notes, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(date) DO UPDATE SET
          cycle_phase=COALESCE(excluded.cycle_phase, daily_logs.cycle_phase),
@@ -261,11 +279,12 @@ export const routes = {
          symptoms=COALESCE(excluded.symptoms, daily_logs.symptoms),
          notes=COALESCE(excluded.notes, daily_logs.notes),
          updated_at=excluded.updated_at`
-    ).run(
-      d.date, d.cycle_phase || null, numOrNull(d.cycle_day), d.period_start ? 1 : 0,
-      numOrNull(d.intake_kcal), numOrNull(d.protein_g), d.back_pain || null, d.symptoms || null,
-      d.notes || null, new Date().toISOString()
-    );
+      )
+      .run(
+        d.date, d.cycle_phase || null, numOrNull(d.cycle_day), d.period_start ? 1 : 0,
+        numOrNull(d.intake_kcal), numOrNull(d.protein_g), d.back_pain || null, d.symptoms || null,
+        d.notes || null, new Date().toISOString()
+      );
     return db.prepare('SELECT * FROM daily_logs WHERE date = ?').get(d.date);
   },
 
@@ -278,25 +297,27 @@ export const routes = {
 
   'GET /api/metrics/weeks': async ({ query }) => {
     const n = parseInt(query.n || '12', 10);
-    const weeks = recentWeeks(today(), n);
-    const goal = activeGoal();
-    const plan = goal ? activePlan(goal.id) : null;
-    return weeks.map((w) => {
-      const pw = plan ? weekForDate(plan.id, w.weekStart) : null;
-      return {
-        weekStart: w.weekStart,
-        actual: { tss: w.tss, hours: w.hours, sessions: w.sessions, distribution: w.distribution, longestHours: w.longestHours },
-        planned: pw ? { tss: pw.target_tss, hours: pw.target_hours, phase: pw.phase, is_recovery: pw.is_recovery,
-          z1_2_pct: pw.z1_2_pct, z3_4_pct: pw.z3_4_pct, z5_pct: pw.z5_pct } : null,
-        comparison: pw ? compareWeek(pw, w) : null,
-      };
-    });
+    const [weeks, goal] = await Promise.all([recentWeeks(today(), n), activeGoal()]);
+    const plan = goal ? await activePlan(goal.id) : null;
+    return Promise.all(
+      weeks.map(async (w) => {
+        const pw = plan ? await weekForDate(plan.id, w.weekStart) : null;
+        return {
+          weekStart: w.weekStart,
+          actual: { tss: w.tss, hours: w.hours, sessions: w.sessions, distribution: w.distribution, longestHours: w.longestHours },
+          planned: pw ? { tss: pw.target_tss, hours: pw.target_hours, phase: pw.phase, is_recovery: pw.is_recovery,
+            z1_2_pct: pw.z1_2_pct, z3_4_pct: pw.z3_4_pct, z5_pct: pw.z5_pct } : null,
+          comparison: pw ? compareWeek(pw, w) : null,
+        };
+      })
+    );
   },
 
   'GET /api/metrics/ef': async ({ query }) => {
     const to = query.to || today();
     const from = query.from || addDays(to, -parseInt(query.days || '180', 10));
-    return { samples: efSamples(from, to), trend: efTrend(to) };
+    const [samples, trend] = await Promise.all([efSamples(from, to), efTrend(to)]);
+    return { samples, trend };
   },
 };
 

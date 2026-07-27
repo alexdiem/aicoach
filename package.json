@@ -15,5 +15,7 @@
     "brief": "node --no-warnings=ExperimentalWarning server/cli.js brief",
     "test": "node --no-warnings=ExperimentalWarning --test test/*.test.js"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@libsql/client": "^0.14.0"
+  }
 }

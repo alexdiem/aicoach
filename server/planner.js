@@ -12,7 +12,7 @@
 // plan_weeks.governing_json with the framework named and the reason given —
 // nothing is silently averaged.
 
-import { db, getSetting, getSettingNum, getAthlete } from './db.js';
+import { db, dbTransaction, getSetting, getSettingNum, getAthlete } from './db.js';
 import { addDays, clamp, daysBetween, isoDate, mean, round, today, weekStart } from './util.js';
 import { currentFitness, recentWeeks, efTrend } from './metrics.js';
 import { hasCycleData, phaseForWeek, simsAdjustment } from './cycle.js';
@@ -250,12 +250,12 @@ function keySessions(phase, cls, goal, ctx) {
  * previous active version so the record of what was originally prescribed
  * survives every regeneration.
  */
-export function generatePlan(goalId, { reason = 'manual', from = null, asOf = today() } = {}) {
-  const goal = db.prepare('SELECT * FROM goals WHERE id = ?').get(goalId);
+export async function generatePlan(goalId, { reason = 'manual', from = null, asOf = today() } = {}) {
+  const goal = await db.prepare('SELECT * FROM goals WHERE id = ?').get(goalId);
   if (!goal) throw new Error(`No goal with id ${goalId}`);
 
-  const athlete = getAthlete();
-  const fitness = currentFitness(asOf);
+  const athlete = await getAthlete();
+  const fitness = await currentFitness(asOf);
   const startCtl = fitness.ctl || 0;
   const planStartWeek = weekStart(goal.start_date);
   const eventWeek = weekStart(goal.event_date);
@@ -267,7 +267,7 @@ export function generatePlan(goalId, { reason = 'manual', from = null, asOf = to
   const eventIF = durationIF(demand.hours);
   const eventTss = round(demand.hours * eventIF * eventIF * 100, 0);
 
-  const maxHours = getSettingNum('max_weekly_hours', null);
+  const maxHours = await getSettingNum('max_weekly_hours', null);
   const pkHours = peakWeeklyHours(demand.hours, maxHours);
   const peakDist = distributionFor('peak', cls);
   const peakWeeklyTss = pkHours * tssPerHour(peakDist);
@@ -277,10 +277,10 @@ export function generatePlan(goalId, { reason = 'manual', from = null, asOf = to
   const seq = allocatePhases(totalWeeks, demand.hours, startCtl, targetCtl);
 
   // Adaptive inputs: how the last few weeks actually went.
-  const adapt = adaptationInputs(asOf);
-  const loadPattern = getSetting('load_pattern', '3:1') === '2:1' ? 2 : 3;
-  let maxRampBase = getSettingNum('max_ramp_base', 6);
-  let maxRampBuild = getSettingNum('max_ramp_build', 4);
+  const adapt = await adaptationInputs(asOf);
+  const loadPattern = (await getSetting('load_pattern', '3:1')) === '2:1' ? 2 : 3;
+  let maxRampBase = await getSettingNum('max_ramp_base', 6);
+  let maxRampBuild = await getSettingNum('max_ramp_build', 4);
   const notes = [];
 
   if (adapt.underRecovery) {
@@ -300,8 +300,9 @@ export function generatePlan(goalId, { reason = 'manual', from = null, asOf = to
   }
 
   // Cycle-aware taper decision (Sims overrides Friel where they diverge).
-  const cycleOn = getSetting('sims_enabled', '1') === '1' && hasCycleData();
-  const raceWeekPhase = cycleOn ? phaseForWeek(eventWeek) : null;
+  const simsEnabled = (await getSetting('sims_enabled', '1')) === '1';
+  const cycleOn = simsEnabled && (await hasCycleData());
+  const raceWeekPhase = cycleOn ? await phaseForWeek(eventWeek) : null;
   const raceInHighHormone = raceWeekPhase && (raceWeekPhase.hormoneState === 'high');
 
   // Starting weekly load: whichever of current CTL or recent real weekly load is
@@ -327,7 +328,7 @@ export function generatePlan(goalId, { reason = 'manual', from = null, asOf = to
     const phase = seq[i];
 
     if (ws < firstWeek) {
-      const prior = priorWeek(goal.id, ws);
+      const prior = await priorWeek(goal.id, ws);
       if (prior) {
         weeks.push({ ...prior, carriedOver: true });
         ctl = prior.projected_ctl ?? ctl;
@@ -392,7 +393,7 @@ export function generatePlan(goalId, { reason = 'manual', from = null, asOf = to
     let simsNotes = [];
     let fuelling = [];
     if (cycleOn) {
-      const wk = phaseForWeek(ws);
+      const wk = await phaseForWeek(ws);
       cyclePhase = wk.phase;
       const adj = wk.phase ? simsAdjustment(wk.phase) : null;
       if (adj && phase !== 'race') {
@@ -429,7 +430,7 @@ export function generatePlan(goalId, { reason = 'manual', from = null, asOf = to
     let strength = 2;
     if (phase === 'race') strength = 0;
     else if (phase === 'taper') strength = 1;
-    if (getSetting('sims_enabled', '1') === '1' && (phase.startsWith('build') || phase === 'peak')) {
+    if (simsEnabled && (phase.startsWith('build') || phase === 'peak')) {
       governing.push({
         decision: 'strength frequency',
         framework: 'Sims',
@@ -526,7 +527,7 @@ function indexOfWeek(ws, planStart) {
   return Math.max(0, Math.floor(daysBetween(planStart, ws) / 7));
 }
 
-function priorWeek(goalId, ws) {
+async function priorWeek(goalId, ws) {
   return db
     .prepare(
       `SELECT pw.* FROM plan_weeks pw
@@ -557,26 +558,25 @@ function focusFor(phase, cls) {
 }
 
 /** What actually happened recently — the input that makes replanning adaptive. */
-export function adaptationInputs(asOf = today()) {
-  const weeks = recentWeeks(asOf, 5).slice(0, 4); // last 4 complete weeks
-  const fitness = currentFitness(asOf);
-  const ef = efTrend(asOf);
+export async function adaptationInputs(asOf = today()) {
+  const [weeksAll, fitness, ef] = await Promise.all([recentWeeks(asOf, 5), currentFitness(asOf), efTrend(asOf)]);
+  const weeks = weeksAll.slice(0, 4); // last 4 complete weeks
 
   const actualWeekly = weeks.map((w) => w.tss || 0);
   const actualWeeklyMean = round(mean(actualWeekly), 0);
   const recentLongestHours = Math.max(0, ...weeks.map((w) => w.longestHours || 0));
 
-  const planned = weeks
-    .map((w) => {
-      const pw = db
+  const plannedRows = await Promise.all(
+    weeks.map((w) =>
+      db
         .prepare(
           `SELECT pw.target_tss FROM plan_weeks pw JOIN plans p ON p.id = pw.plan_id
            WHERE p.active = 1 AND pw.start_date = ? ORDER BY p.version DESC LIMIT 1`
         )
-        .get(w.weekStart);
-      return pw?.target_tss || null;
-    })
-    .filter((x) => x != null);
+        .get(w.weekStart)
+    )
+  );
+  const planned = plannedRows.map((pw) => pw?.target_tss || null).filter((x) => x != null);
   const plannedMean = round(mean(planned), 0);
   const compliancePct = plannedMean ? round(((actualWeeklyMean || 0) / plannedMean) * 100, 0) : null;
 
@@ -602,70 +602,64 @@ export function adaptationInputs(asOf = today()) {
 
 // --- persistence ------------------------------------------------------------
 
-export function savePlan(result) {
+export async function savePlan(result) {
   const goalId = result.goal.id;
-  const prev = db.prepare('SELECT MAX(version) v FROM plans WHERE goal_id = ?').get(goalId);
+  const prev = await db.prepare('SELECT MAX(version) v FROM plans WHERE goal_id = ?').get(goalId);
   const version = (prev?.v || 0) + 1;
 
-  db.exec('BEGIN');
-  try {
-    db.prepare('UPDATE plans SET active = 0 WHERE goal_id = ?').run(goalId);
-    const info = db
-      .prepare(
-        `INSERT INTO plans (goal_id, version, generated_at, reason, params_json, notes_json, active)
-         VALUES (?,?,?,?,?,?,1)`
-      )
-      .run(
+  return dbTransaction(async (tx) => {
+    await tx.run('UPDATE plans SET active = 0 WHERE goal_id = ?', [goalId]);
+    const info = await tx.run(
+      `INSERT INTO plans (goal_id, version, generated_at, reason, params_json, notes_json, active)
+       VALUES (?,?,?,?,?,?,1)`,
+      [
         goalId,
         version,
         result.generatedAt,
         result.reason,
         JSON.stringify({ demand: result.demand, targets: result.targets, adapt: result.adapt, cycle: result.cycle }),
-        JSON.stringify(result.notes)
-      );
-    const planId = Number(info.lastInsertRowid);
-    const ins = db.prepare(
-      `INSERT INTO plan_weeks (plan_id, week_index, start_date, end_date, phase, block_index, week_in_block,
-        is_recovery, target_tss, target_hours, z1_2_pct, z3_4_pct, z5_pct, long_session_h, long_session_tss,
-        strength_sessions, key_sessions_json, projected_ctl, focus, governing_json, notes)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+        JSON.stringify(result.notes),
+      ]
     );
+    const planId = Number(info.lastInsertRowid);
     for (const w of result.weeks) {
-      ins.run(
-        planId, w.week_index, w.start_date, w.end_date, w.phase, w.block_index ?? null, w.week_in_block ?? null,
-        w.is_recovery ?? 0, w.target_tss ?? null, w.target_hours ?? null, w.z1_2_pct ?? null, w.z3_4_pct ?? null,
-        w.z5_pct ?? null, w.long_session_h ?? null, w.long_session_tss ?? null, w.strength_sessions ?? null,
-        w.key_sessions_json ?? null, w.projected_ctl ?? null, w.focus ?? null, w.governing_json ?? null,
-        w.notes ?? null
+      await tx.run(
+        `INSERT INTO plan_weeks (plan_id, week_index, start_date, end_date, phase, block_index, week_in_block,
+          is_recovery, target_tss, target_hours, z1_2_pct, z3_4_pct, z5_pct, long_session_h, long_session_tss,
+          strength_sessions, key_sessions_json, projected_ctl, focus, governing_json, notes)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          planId, w.week_index, w.start_date, w.end_date, w.phase, w.block_index ?? null, w.week_in_block ?? null,
+          w.is_recovery ?? 0, w.target_tss ?? null, w.target_hours ?? null, w.z1_2_pct ?? null, w.z3_4_pct ?? null,
+          w.z5_pct ?? null, w.long_session_h ?? null, w.long_session_tss ?? null, w.strength_sessions ?? null,
+          w.key_sessions_json ?? null, w.projected_ctl ?? null, w.focus ?? null, w.governing_json ?? null,
+          w.notes ?? null,
+        ]
       );
     }
-    db.exec('COMMIT');
     return { planId, version };
-  } catch (e) {
-    db.exec('ROLLBACK');
-    throw e;
-  }
+  });
 }
 
-export function activePlan(goalId) {
+export async function activePlan(goalId) {
   return db.prepare('SELECT * FROM plans WHERE goal_id = ? AND active = 1 ORDER BY version DESC LIMIT 1').get(goalId);
 }
 
-export function planWeeks(planId) {
+export async function planWeeks(planId) {
   return db.prepare('SELECT * FROM plan_weeks WHERE plan_id = ? ORDER BY start_date').all(planId);
 }
 
-export function weekForDate(planId, date) {
+export async function weekForDate(planId, date) {
   const ws = weekStart(date);
   return db.prepare('SELECT * FROM plan_weeks WHERE plan_id = ? AND start_date = ?').get(planId, ws);
 }
 
-export function activeGoal() {
-  return db.prepare("SELECT * FROM goals WHERE status = 'active' ORDER BY event_date LIMIT 1").get() || null;
+export async function activeGoal() {
+  return (await db.prepare("SELECT * FROM goals WHERE status = 'active' ORDER BY event_date LIMIT 1").get()) || null;
 }
 
-export function regenerate(goalId, reason = 'weekly-adaptive') {
-  const result = generatePlan(goalId, { reason });
-  const saved = savePlan(result);
+export async function regenerate(goalId, reason = 'weekly-adaptive') {
+  const result = await generatePlan(goalId, { reason });
+  const saved = await savePlan(result);
   return { ...saved, result };
 }

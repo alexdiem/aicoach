@@ -5,6 +5,12 @@
 //   1. daily_logs.period_start = 1  (explicit day-1 markers, most reliable)
 //   2. daily_logs.cycle_phase       (explicit phase for a date)
 //   3. wellness.menstrual_phase     (synced from intervals.icu)
+//
+// Async throughout (the storage layer may be a networked DB on Vercel).
+// phaseForWeek fetches its whole week's daily_logs/wellness rows in two range
+// queries rather than looking up each of the 7 days individually — with a
+// local sqlite file that distinction didn't matter, but over a network it's
+// the difference between 3 round trips and ~21 per week of the plan.
 
 import { db } from './db.js';
 import { addDays, daysBetween, median, round, today } from './util.js';
@@ -22,25 +28,23 @@ export const HORMONE_STATE = {
 
 const DEFAULT_CYCLE_LENGTH = 28;
 
-export function periodStarts() {
-  return db
-    .prepare('SELECT date FROM daily_logs WHERE period_start = 1 ORDER BY date')
-    .all()
-    .map((r) => r.date);
+export async function periodStarts() {
+  const rows = await db.prepare('SELECT date FROM daily_logs WHERE period_start = 1 ORDER BY date').all();
+  return rows.map((r) => r.date);
 }
 
-export function hasCycleData() {
-  const ps = db.prepare('SELECT COUNT(*) c FROM daily_logs WHERE period_start = 1').get().c;
-  const ph = db.prepare("SELECT COUNT(*) c FROM daily_logs WHERE cycle_phase IS NOT NULL AND cycle_phase != ''").get().c;
-  const wl = db
-    .prepare("SELECT COUNT(*) c FROM wellness WHERE menstrual_phase IS NOT NULL AND menstrual_phase != ''")
-    .get().c;
-  return ps > 0 || ph > 0 || wl > 0;
+export async function hasCycleData() {
+  const [ps, ph, wl] = await Promise.all([
+    db.prepare('SELECT COUNT(*) c FROM daily_logs WHERE period_start = 1').get(),
+    db.prepare("SELECT COUNT(*) c FROM daily_logs WHERE cycle_phase IS NOT NULL AND cycle_phase != ''").get(),
+    db.prepare("SELECT COUNT(*) c FROM wellness WHERE menstrual_phase IS NOT NULL AND menstrual_phase != ''").get(),
+  ]);
+  return ps.c > 0 || ph.c > 0 || wl.c > 0;
 }
 
 /** Mean cycle length from logged day-1 markers; null if fewer than two. */
-export function cycleModel() {
-  const starts = periodStarts();
+export async function cycleModel() {
+  const starts = await periodStarts();
   if (starts.length < 2) {
     return {
       lengthDays: starts.length ? DEFAULT_CYCLE_LENGTH : null,
@@ -87,24 +91,20 @@ function normalisePhaseName(s) {
 }
 
 /**
- * Best-effort phase for a date. `source` tells the UI (and the brief) how much
- * to trust it: 'logged' > 'wellness' > 'predicted'.
+ * Pure day-level resolution given already-fetched rows. `source` tells the UI
+ * (and the brief) how much to trust it: 'logged' > 'wellness' > 'predicted'.
  */
-export function phaseFor(date) {
-  const log = db.prepare('SELECT cycle_phase, cycle_day FROM daily_logs WHERE date = ?').get(date);
-  if (log?.cycle_phase) {
-    return { date, phase: normalisePhaseName(log.cycle_phase), day: log.cycle_day ?? null, source: 'logged' };
+function resolvePhase(date, { logRow, wellRow, model }) {
+  if (logRow?.cycle_phase) {
+    return { date, phase: normalisePhaseName(logRow.cycle_phase), day: logRow.cycle_day ?? null, source: 'logged' };
   }
-  const well = db.prepare('SELECT menstrual_phase, menstrual_predicted FROM wellness WHERE date = ?').get(date);
-  if (well?.menstrual_phase) {
-    const p = normalisePhaseName(well.menstrual_phase);
+  if (wellRow?.menstrual_phase) {
+    const p = normalisePhaseName(wellRow.menstrual_phase);
     if (p) return { date, phase: p, day: null, source: 'wellness' };
   }
-
-  const model = cycleModel();
-  if (!model.lastStart) {
-    if (well?.menstrual_predicted) {
-      const p = normalisePhaseName(well.menstrual_predicted);
+  if (!model?.lastStart) {
+    if (wellRow?.menstrual_predicted) {
+      const p = normalisePhaseName(wellRow.menstrual_predicted);
       if (p) return { date, phase: p, day: null, source: 'wellness-predicted' };
     }
     return { date, phase: null, day: null, source: 'none' };
@@ -123,10 +123,33 @@ export function phaseFor(date) {
   };
 }
 
-/** Dominant phase across a week, with the per-day detail kept for the UI. */
-export function phaseForWeek(weekStartDate) {
+/** Best-effort phase for a single date. */
+export async function phaseFor(date) {
+  const [logRow, wellRow, model] = await Promise.all([
+    db.prepare('SELECT cycle_phase, cycle_day FROM daily_logs WHERE date = ?').get(date),
+    db.prepare('SELECT menstrual_phase, menstrual_predicted FROM wellness WHERE date = ?').get(date),
+    cycleModel(),
+  ]);
+  return resolvePhase(date, { logRow, wellRow, model });
+}
+
+/** Dominant phase across a week. Three queries total, not three per day. */
+export async function phaseForWeek(weekStartDate) {
+  const weekEnd = addDays(weekStartDate, 6);
+  const [logRows, wellRows, model] = await Promise.all([
+    db.prepare('SELECT date, cycle_phase, cycle_day FROM daily_logs WHERE date >= ? AND date <= ?').all(weekStartDate, weekEnd),
+    db.prepare('SELECT date, menstrual_phase, menstrual_predicted FROM wellness WHERE date >= ? AND date <= ?').all(weekStartDate, weekEnd),
+    cycleModel(),
+  ]);
+  const logByDate = new Map(logRows.map((r) => [r.date, r]));
+  const wellByDate = new Map(wellRows.map((r) => [r.date, r]));
+
   const days = [];
-  for (let i = 0; i < 7; i++) days.push(phaseFor(addDays(weekStartDate, i)));
+  for (let i = 0; i < 7; i++) {
+    const date = addDays(weekStartDate, i);
+    days.push(resolvePhase(date, { logRow: logByDate.get(date), wellRow: wellByDate.get(date), model }));
+  }
+
   const counts = new Map();
   for (const d of days) {
     if (!d.phase) continue;
@@ -148,7 +171,8 @@ export function phaseForWeek(weekStartDate) {
 
 /**
  * Sims-derived training adjustments for a phase. Returned as multipliers and
- * text so the planner can apply them and the brief can explain them.
+ * text so the planner can apply them and the brief can explain them. Pure —
+ * no DB access, stays synchronous.
  */
 export function simsAdjustment(phase) {
   switch (phase) {
@@ -228,10 +252,9 @@ export function simsAdjustment(phase) {
   }
 }
 
-export function cycleSummary(date = today()) {
-  if (!hasCycleData()) return { enabled: false };
-  const model = cycleModel();
-  const now = phaseFor(date);
+export async function cycleSummary(date = today()) {
+  if (!(await hasCycleData())) return { enabled: false };
+  const [model, now] = await Promise.all([cycleModel(), phaseFor(date)]);
   return {
     enabled: true,
     model,

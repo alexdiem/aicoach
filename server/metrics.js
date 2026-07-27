@@ -3,6 +3,11 @@
 //
 // Every value here is meant to be quotable in a brief, so functions return the
 // inputs alongside the result (n, window, thresholds) rather than a bare number.
+//
+// All DB-touching functions here are async (the storage layer may be a
+// networked DB on Vercel — see dbdriver.js). Independent queries are fired
+// with Promise.all rather than awaited one at a time, since a remote DB's
+// round-trip is the dominant cost once it's no longer a local file.
 
 import { db, getSettingNum } from './db.js';
 import { addDays, daysBetween, isoDate, mean, pctChange, round, sum, today, weekStart } from './util.js';
@@ -10,14 +15,12 @@ import { addDays, daysBetween, isoDate, mean, pctChange, round, sum, today, week
 const CTL_TAU = 42;
 const ATL_TAU = 7;
 
-export function activitiesBetween(from, to) {
-  return db
-    .prepare('SELECT * FROM activities WHERE date >= ? AND date <= ? ORDER BY date, start_local')
-    .all(from, to);
+export async function activitiesBetween(from, to) {
+  return db.prepare('SELECT * FROM activities WHERE date >= ? AND date <= ? ORDER BY date, start_local').all(from, to);
 }
 
-export function dailyLoad(from, to) {
-  const rows = db
+export async function dailyLoad(from, to) {
+  const rows = await db
     .prepare('SELECT date, SUM(COALESCE(tss,0)) AS tss FROM activities WHERE date >= ? AND date <= ? GROUP BY date')
     .all(from, to);
   const map = new Map();
@@ -30,23 +33,18 @@ export function dailyLoad(from, to) {
  * date (it is the number shown in the app the athlete looks at); otherwise we
  * continue the standard exponential model from the last known point.
  */
-export function fitnessSeries(from, to) {
-  const loads = dailyLoad(addDays(from, -180), to);
-  const wellness = new Map(
-    db
-      .prepare('SELECT date, ctl, atl FROM wellness WHERE date >= ? AND date <= ?')
-      .all(addDays(from, -180), to)
-      .map((r) => [r.date, r])
-  );
-
+export async function fitnessSeries(from, to) {
   const start = addDays(from, -180);
+  const [loads, wellnessRows, seed] = await Promise.all([
+    dailyLoad(start, to),
+    db.prepare('SELECT date, ctl, atl FROM wellness WHERE date >= ? AND date <= ?').all(start, to),
+    db.prepare('SELECT ctl, atl FROM wellness WHERE date <= ? AND ctl IS NOT NULL ORDER BY date DESC LIMIT 1').get(start),
+  ]);
+  const wellness = new Map(wellnessRows.map((r) => [r.date, r]));
+
   const n = daysBetween(start, to);
   let ctl = 0;
   let atl = 0;
-  // Seed from the earliest wellness datapoint we have, if any.
-  const seed = db
-    .prepare('SELECT ctl, atl FROM wellness WHERE date <= ? AND ctl IS NOT NULL ORDER BY date DESC LIMIT 1')
-    .get(start);
   if (seed) {
     ctl = seed.ctl || 0;
     atl = seed.atl || 0;
@@ -86,14 +84,14 @@ export function fitnessSeries(from, to) {
   return out;
 }
 
-export function currentFitness(date = today()) {
-  const series = fitnessSeries(addDays(date, -7), date);
+export async function currentFitness(date = today()) {
+  const series = await fitnessSeries(addDays(date, -7), date);
   return series[series.length - 1] || { date, ctl: 0, atl: 0, tsb: 0, source: 'none' };
 }
 
 /** CTL change over the last 7 days = ramp rate (CTL points/week). */
-export function rampRate(date = today()) {
-  const series = fitnessSeries(addDays(date, -8), date);
+export async function rampRate(date = today()) {
+  const series = await fitnessSeries(addDays(date, -8), date);
   if (series.length < 8) return null;
   const now = series[series.length - 1].ctl;
   const then = series[0].ctl;
@@ -107,10 +105,15 @@ export function rampRate(date = today()) {
  * compare like with like. Comparing EF across a sprint and a 6h endurance ride
  * is meaningless; comparing steady rides at IF 0.55-0.88 is not.
  */
-export function efSamples(from, to, opts = {}) {
-  const ifMin = opts.ifMin ?? getSettingNum('ef_if_min', 0.55);
-  const ifMax = opts.ifMax ?? getSettingNum('ef_if_max', 0.88);
-  const minMin = opts.minMinutes ?? getSettingNum('ef_min_minutes', 45);
+export async function efSamples(from, to, opts = {}) {
+  const [defIfMin, defIfMax, defMinMin] = await Promise.all([
+    getSettingNum('ef_if_min', 0.55),
+    getSettingNum('ef_if_max', 0.88),
+    getSettingNum('ef_min_minutes', 45),
+  ]);
+  const ifMin = opts.ifMin ?? defIfMin;
+  const ifMax = opts.ifMax ?? defIfMax;
+  const minMin = opts.minMinutes ?? defMinMin;
   return db
     .prepare(
       `SELECT id, date, name, type, ef, intensity, np, avg_hr, vi, moving_time, tss
@@ -126,9 +129,11 @@ export function efSamples(from, to, opts = {}) {
  * EF trend: mean EF of the recent window vs the preceding baseline window,
  * both IF-matched. Negative pct = aerobic decoupling / accumulating fatigue.
  */
-export function efTrend(date = today(), recentDays = 21, baselineDays = 42) {
-  const recent = efSamples(addDays(date, -recentDays + 1), date);
-  const baseline = efSamples(addDays(date, -recentDays - baselineDays + 1), addDays(date, -recentDays));
+export async function efTrend(date = today(), recentDays = 21, baselineDays = 42) {
+  const [recent, baseline] = await Promise.all([
+    efSamples(addDays(date, -recentDays + 1), date),
+    efSamples(addDays(date, -recentDays - baselineDays + 1), addDays(date, -recentDays)),
+  ]);
   const recentMean = mean(recent.map((r) => r.ef));
   const baseMean = mean(baseline.map((r) => r.ef));
   const change = pctChange(recentMean, baseMean);
@@ -154,8 +159,8 @@ export function efTrend(date = today(), recentDays = 21, baselineDays = 42) {
 // --- Variability index ------------------------------------------------------
 
 /** Steady rides (IF below threshold) whose VI exceeds a ceiling = ragged pacing. */
-export function viDrift(from, to, { ifMax = 0.78, viCeiling = 1.1, minMinutes = 60 } = {}) {
-  const rows = db
+export async function viDrift(from, to, { ifMax = 0.78, viCeiling = 1.1, minMinutes = 60 } = {}) {
+  const rows = await db
     .prepare(
       `SELECT id, date, name, vi, intensity, np, avg_power, moving_time, elevation_m
        FROM activities
@@ -181,7 +186,7 @@ export function viDrift(from, to, { ifMax = 0.78, viCeiling = 1.1, minMinutes = 
  * costs progressively more W' at the same NP, anaerobic capacity is not
  * recovering between sessions.
  */
-export function wbalSessions(from, to, { minIf = 0.82 } = {}) {
+export async function wbalSessions(from, to, { minIf = 0.82 } = {}) {
   return db
     .prepare(
       `SELECT id, date, name, wbal_drop, wbal_min, w_prime, intensity, np, tss, moving_time
@@ -192,8 +197,8 @@ export function wbalSessions(from, to, { minIf = 0.82 } = {}) {
     .all(from, to, minIf);
 }
 
-export function wbalRecoveryFlag(date = today(), days = 28) {
-  const rows = wbalSessions(addDays(date, -days + 1), date);
+export async function wbalRecoveryFlag(date = today(), days = 28) {
+  const rows = await wbalSessions(addDays(date, -days + 1), date);
   if (rows.length < 3) return { enough: false, n: rows.length, rows };
   const half = Math.floor(rows.length / 2);
   const older = rows.slice(0, half);
@@ -222,8 +227,8 @@ export function wbalRecoveryFlag(date = today(), days = 28) {
  * HR zone times next, and a whole-activity IF classification as a last resort.
  * Bands: Z1-2 (below LT1), Z3-4 (tempo/threshold), Z5+ (VO2 and above).
  */
-export function intensityDistribution(from, to) {
-  const acts = activitiesBetween(from, to);
+export async function intensityDistribution(from, to) {
+  const acts = await activitiesBetween(from, to);
   let low = 0;
   let mid = 0;
   let high = 0;
@@ -270,10 +275,9 @@ function safeArray(json) {
 
 // --- Weekly rollups ---------------------------------------------------------
 
-export function weekActuals(ws) {
+export async function weekActuals(ws) {
   const we = addDays(ws, 6);
-  const acts = activitiesBetween(ws, we);
-  const dist = intensityDistribution(ws, we);
+  const [acts, dist] = await Promise.all([activitiesBetween(ws, we), intensityDistribution(ws, we)]);
   const longest = acts.reduce((m, a) => ((a.moving_time || 0) > (m?.moving_time || 0) ? a : m), null);
   return {
     weekStart: ws,
@@ -290,14 +294,15 @@ export function weekActuals(ws) {
   };
 }
 
-/** Weekly actuals for the N complete weeks ending with the week of `date`. */
-export function recentWeeks(date = today(), n = 8) {
+/** Weekly actuals for the N complete weeks ending with the week of `date`. Independent, so fetched in parallel. */
+export async function recentWeeks(date = today(), n = 8) {
   const cur = weekStart(date);
-  const out = [];
-  for (let i = n - 1; i >= 0; i--) out.push(weekActuals(addDays(cur, -7 * i)));
-  return out;
+  const weeks = [];
+  for (let i = n - 1; i >= 0; i--) weeks.push(addDays(cur, -7 * i));
+  return Promise.all(weeks.map((ws) => weekActuals(ws)));
 }
 
+/** Pure comparison, no DB access — stays synchronous. */
 export function compareWeek(planWeek, actual) {
   if (!planWeek) return null;
   const tssDelta = (actual.tss || 0) - (planWeek.target_tss || 0);
@@ -327,17 +332,14 @@ export function compareWeek(planWeek, actual) {
 
 // --- Nutrition / RED-S support (optional, only if the athlete logs it) ------
 
-export function fuellingSignals(date = today(), days = 28) {
+export async function fuellingSignals(date = today(), days = 28) {
   const from = addDays(date, -days + 1);
-  const w = db
-    .prepare(
-      `SELECT date, weight, resting_hr, hrv, kcal_consumed FROM wellness
-       WHERE date >= ? AND date <= ? ORDER BY date`
-    )
-    .all(from, date);
-  const logs = db
-    .prepare('SELECT date, intake_kcal, protein_g FROM daily_logs WHERE date >= ? AND date <= ? ORDER BY date')
-    .all(from, date);
+  const [w, logs] = await Promise.all([
+    db
+      .prepare(`SELECT date, weight, resting_hr, hrv, kcal_consumed FROM wellness WHERE date >= ? AND date <= ? ORDER BY date`)
+      .all(from, date),
+    db.prepare('SELECT date, intake_kcal, protein_g FROM daily_logs WHERE date >= ? AND date <= ? ORDER BY date').all(from, date),
+  ]);
 
   const half = Math.floor(w.length / 2);
   const weightEarly = mean(w.slice(0, half).map((r) => r.weight));

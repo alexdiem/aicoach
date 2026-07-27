@@ -1,4 +1,7 @@
 // HTTP server: JSON API + static frontend + background scheduler.
+// Local/self-hosted entry point. For the Vercel deployment, see api/index.js
+// (same route table via requestHandler.js; no background scheduler there —
+// Vercel Cron hits /api/cron on a schedule instead).
 
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
@@ -6,7 +9,7 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 
-import { matchRoute } from './api.js';
+import { handleApiRequest } from './requestHandler.js';
 import { startScheduler } from './scheduler.js';
 import { DB_PATH } from './db.js';
 
@@ -23,33 +26,6 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
 };
-
-function sendJson(res, status, payload) {
-  const body = JSON.stringify(payload ?? null);
-  res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Content-Length': Buffer.byteLength(body),
-    'Cache-Control': 'no-store',
-  });
-  res.end(body);
-}
-
-async function readBody(req) {
-  const chunks = [];
-  let size = 0;
-  for await (const c of req) {
-    size += c.length;
-    if (size > 2 * 1024 * 1024) throw Object.assign(new Error('body too large'), { status: 413 });
-    chunks.push(c);
-  }
-  if (!chunks.length) return null;
-  const text = Buffer.concat(chunks).toString('utf8');
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw Object.assign(new Error('invalid JSON body'), { status: 400 });
-  }
-}
 
 async function serveStatic(req, res, pathname) {
   let rel = pathname === '/' ? '/index.html' : pathname;
@@ -83,22 +59,7 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  const route = matchRoute(req.method, pathname);
-  if (!route) return sendJson(res, 404, { error: `No route for ${req.method} ${pathname}` });
-
-  try {
-    const body = req.method === 'GET' || req.method === 'DELETE' ? null : await readBody(req);
-    const query = Object.fromEntries(url.searchParams.entries());
-    const out = await route.handler({ body, query, params: route.params, req });
-    sendJson(res, 200, out);
-  } catch (err) {
-    const status = err.status || (err.name === 'IntervalsError' ? err.status || 502 : 500);
-    if (!err.status) console.error(`[api] ${req.method} ${pathname}:`, err);
-    sendJson(res, status >= 400 && status < 600 ? status : 500, {
-      error: err.message,
-      detail: err.body || undefined,
-    });
-  }
+  await handleApiRequest(req, res, { pathname, searchParams: url.searchParams });
 });
 
 server.listen(PORT, HOST, () => {
