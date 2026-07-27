@@ -217,10 +217,10 @@ server/
   scheduler.js      periodic sync + Monday replan (shared by both entry points)
   cli.js            terminal entry points
 api/
-  [...slug].js      Vercel entry point: same route table, no scheduler
-  cron.js           Vercel Cron target — calls the same scheduler logic once per invocation
+  index.js          Vercel entry point: same route table, no scheduler; also
+                     dispatches /api/cron internally (see vercel.json's rewrite)
 public/             index.html, app.js, styles.css
-vercel.json         static output dir + cron schedule
+vercel.json         static output dir, /api/* rewrite, cron schedule
 ```
 
 ## CLI
