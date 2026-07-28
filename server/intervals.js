@@ -23,7 +23,7 @@ function authHeader(key) {
 }
 
 async function request(path, { key, params } = {}) {
-  const apiKey = key || getSetting('intervals_api_key');
+  const apiKey = key || (await getSetting('intervals_api_key'));
   if (!apiKey) {
     throw new IntervalsError(
       'No intervals.icu API key configured. Add it in Settings (intervals.icu → Settings → Developer → API Key).',
@@ -69,12 +69,12 @@ function normId(id) {
 }
 
 export async function getAthleteId({ key } = {}) {
-  const configured = normId(getSetting('intervals_athlete_id', '0'));
+  const configured = normId(await getSetting('intervals_athlete_id', '0'));
   if (configured !== '0') return configured;
   const me = await request('/athlete/0', { key });
   const id = me && (me.id || me.athlete?.id);
   if (id) {
-    setSetting('intervals_athlete_id', String(id));
+    await setSetting('intervals_athlete_id', String(id));
     return String(id);
   }
   return '0';
