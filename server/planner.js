@@ -538,23 +538,26 @@ async function priorWeek(goalId, ws) {
     .get(goalId, ws);
 }
 
+/**
+ * The coach's explanation of the block, not just its label. Written the way
+ * a coach would talk you through what this phase is *for* — what it builds,
+ * why it comes where it does, what it should feel like — so the plan reads
+ * as a reasoned progression rather than a table of numbers with a tag on it.
+ */
 function focusFor(phase, cls) {
+  const longEvent = cls === 'ultra' || cls === 'long';
   const map = {
-    prep: 'General preparation: consistency, aerobic frequency, movement quality.',
-    base1: 'Aerobic base: duration at Z2, cadence and fuelling habits, max-strength.',
-    base2: 'Aerobic base + muscular endurance: tempo blocks lengthen.',
-    base3: 'Sweet spot and sustained sub-threshold; longest rides step up.',
-    build1: 'Threshold work plus event-specific long days.',
-    build2: 'VO2 sharpening and full race-simulation days.',
-    peak: 'Specificity: dress rehearsals, low volume, sharp legs.',
-    taper: 'Shed fatigue, hold frequency and intensity, cut duration.',
-    race: 'Execute.',
+    prep: "General preparation. Before we load anything specific, we want consistency: getting the aerobic engine ticking over regularly, cleaning up cadence and pedalling technique, and building the habit of fuelling on the bike. Nothing here is hard by design — the whole point of this block is to arrive at base training already durable, so the real load doesn't have to double as an adaptation to just showing up.",
+    base1: "Early aerobic base. This is where your season's fitness actually gets built — everything after this block is spending what gets deposited here. The work is deliberately unglamorous: duration at Z2, cadence work, and dialling in fuelling and hydration habits you'll lean on later. Strength work starts in earnest now too, while volume is still low enough to recover from it properly.",
+    base2: "Aerobic base, extending. Same intent as the last block — build the engine — but the tempo work lengthens and the long ride grows, so you're teaching your body to hold a steady, moderate effort for longer without the aerobic system drifting. This is also usually where fuelling strategy for the event starts getting tested for real, not just practiced.",
+    base3: "Late base. Sweet-spot work appears here because your aerobic foundation is solid enough now to load sub-threshold work on top of it without digging a hole you can't climb out of. Your longest rides step up close to what the build phase will demand — this is the bridge between \"building the engine\" and \"specific preparation, quality endurance\" starts here.",
+    build1: `Early build. The emphasis shifts from volume to specificity: threshold intervals${longEvent ? '' : ' start doing real work'}, and your long day starts looking like the event itself rather than just a big aerobic ride. ${longEvent ? "For an event this long, the specific work IS the duration and repeated days, not more intervals — time on feet, fuelling at race rate, and getting comfortable being uncomfortable for a long time matter more here than another hard interval set." : 'This is where fitness starts converting into race-specific capability rather than just raw aerobic volume.'}`,
+    build2: `Peak build. This is the highest-load, highest-specificity block before you sharpen — ${longEvent ? 'back-to-back long days with full event kit and fuelling, rehearsing exactly what race day will ask of you' : 'VO2 work layered on top of race-pace blocks, run at full event fuelling'}. Expect to be tired here; that's the block doing its job, not a sign something's wrong, provided Form doesn't fall through the floor (that's what the weekly checks are for).`,
+    peak: "Peak / specificity. Volume comes down, but intensity and specificity go up — this is dress-rehearsal territory: event kit, event fuelling, event position, on courses or efforts that mimic race day as closely as practical. The legs should start feeling sharper, not just less tired; if they don't, that's exactly the kind of thing the weekly brief should be flagging.",
+    taper: 'Taper. The fitness for this event is already built — from here, the only job is to arrive on the start line rested without losing sharpness. Frequency and intensity hold; duration comes down. It is normal to feel restless or oddly fresh partway through a taper; that is the adaptation showing up, not fitness leaking away.',
+    race: 'Race week. Nothing new gets built from here — the work is banked. Keep everything short, keep the legs moving, and trust the training that got you here.',
   };
-  const base = map[phase] || '';
-  if ((cls === 'ultra' || cls === 'long') && (phase === 'build1' || phase === 'build2')) {
-    return base + ' Specificity for this event is time-on-feet and back-to-back days, not more intervals.';
-  }
-  return base;
+  return map[phase] || '';
 }
 
 /** What actually happened recently — the input that makes replanning adaptive. */

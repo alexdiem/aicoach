@@ -459,7 +459,7 @@ function buildDirective({ adjustment, week, thisWeek, fit, tsb, ramp, rampCap, c
         severity: 'critical',
         framework: 'Friel',
         headline: `Form is ${signed(tsb)}. This week is cut to ${week.target_tss} TSS / ${week.target_hours}h, nothing above ${z2Watts}.`,
-        text: `TSB ${signed(tsb)} is fitness ${fit.ctlPrev} minus fatigue ${fit.atlPrev} — ${round(Math.abs(tsb), 0)} points of accumulated fatigue over your fitness. The planned ${thisWeek.target_tss} TSS has been halved and the ${thisWeek.z3_4_pct}% / ${thisWeek.z5_pct}% intensity allocation zeroed. Getting TSB back above -15 takes about ${daysToRecoverTsb(fit, -15)} day(s) at or below this load; do not schedule a quality session before then.`,
+        text: `I'm pulling the plug on this week's intensity, and I want you to actually listen rather than push through it. TSB ${signed(tsb)} is fitness ${fit.ctlPrev} minus fatigue ${fit.atlPrev} — ${round(Math.abs(tsb), 0)} points of accumulated fatigue over your fitness, which is deep enough that the next hard session would cost more than it gives back. The planned ${thisWeek.target_tss} TSS has been halved and the ${thisWeek.z3_4_pct}% / ${thisWeek.z5_pct}% intensity allocation zeroed. Getting TSB back above -15 takes about ${daysToRecoverTsb(fit, -15)} day(s) at or below this load; do not schedule a quality session before then, no matter how good a day feels.`,
       };
     case 'under-recovery':
       return {
@@ -467,7 +467,7 @@ function buildDirective({ adjustment, week, thisWeek, fit, tsb, ramp, rampCap, c
         severity: 'critical',
         framework: 'Friel',
         headline: `Cut to ${week.target_tss} TSS this week — EF is down ${signed(adjustment.efChangePct)}% at matched IF while ATL is ${fit.atl}.`,
-        text: `Same power costing more heart rate while fatigue climbs is under-recovery, not a plateau, and pushing through it costs the next block. This week is now ${week.target_tss} TSS / ${week.target_hours}h (was ${thisWeek.target_tss} / ${thisWeek.target_hours}h) with nothing above ${z2Watts}. Keep the ${week.long_session_h}h long ride — duration is not what is hurting you, intensity on top of fatigue is — and re-test EF on a steady 90 min ride next week.`,
+        text: `This is the signature I watch for most closely: same power costing more heart rate while fatigue climbs is under-recovery, not a plateau, and pushing through it is exactly how a good block turns into a wasted one. This week is now ${week.target_tss} TSS / ${week.target_hours}h (was ${thisWeek.target_tss} / ${thisWeek.target_hours}h) with nothing above ${z2Watts}. Keep the ${week.long_session_h}h long ride — duration is not what is hurting you, intensity on top of fatigue is — and re-test EF on a steady 90 min ride next week so we know whether this week actually worked.`,
       };
     case 'tsb-low':
       return {
@@ -475,7 +475,7 @@ function buildDirective({ adjustment, week, thisWeek, fit, tsb, ramp, rampCap, c
         severity: 'warn',
         framework: 'Friel',
         headline: `Cap intensity at Z2 this week — Form is at ${signed(tsb)}. Volume stays at ${week.target_tss} TSS.`,
-        text: `TSB ${signed(tsb)} (fitness ${fit.ctlPrev} minus fatigue ${fit.atlPrev}). Aerobic volume at this Form is still productive; intensity is not. The week's Z5 allocation has gone from ${thisWeek.z5_pct}% to ${week.z5_pct}% of time and Z3-4 from ${thisWeek.z3_4_pct}% to ${week.z3_4_pct}%, with the ${week.target_hours}h redistributed below ${z2Watts}. Reinstate one quality session only if TSB is above -15 by Thursday.`,
+        text: `You don't need to back off the miles, just the sharp stuff. TSB ${signed(tsb)} (fitness ${fit.ctlPrev} minus fatigue ${fit.atlPrev}) means aerobic volume is still productive — it's intensity on top of it that isn't. The week's Z5 allocation has gone from ${thisWeek.z5_pct}% to ${week.z5_pct}% of time and Z3-4 from ${thisWeek.z3_4_pct}% to ${week.z3_4_pct}%, with the ${week.target_hours}h redistributed below ${z2Watts}. Reinstate one quality session only if TSB is above -15 by Thursday — otherwise this stays an easy week.`,
       };
     case 'ramp-over-cap':
       return {
@@ -483,7 +483,7 @@ function buildDirective({ adjustment, week, thisWeek, fit, tsb, ramp, rampCap, c
         severity: 'warn',
         framework: 'Friel',
         headline: `Hold at ${week.target_tss} TSS this week — CTL ramped ${signed(ramp)} against a ${rampCap}/wk cap.`,
-        text: `CTL went from ${round((fit.ctl || 0) - (ramp || 0), 1)} to ${fit.ctl} in seven days. The plan asked for ${thisWeek.target_tss} TSS; that is now ${week.target_tss} (maintenance at CTL ${fit.ctl} × 7). Consolidate this week, and the ramp resumes next week from a CTL that has actually been absorbed.`,
+        text: `You've been building faster than the plan for this phase actually wants — CTL went from ${round((fit.ctl || 0) - (ramp || 0), 1)} to ${fit.ctl} in seven days, and fast fitness gains are usually fast fatigue gains too. The plan asked for ${thisWeek.target_tss} TSS; that is now ${week.target_tss} (maintenance at CTL ${fit.ctl} × 7). Consolidate this week rather than adding more — the ramp resumes next week from a CTL that has actually been absorbed, not just accumulated.`,
       };
     default:
       break;
@@ -495,7 +495,7 @@ function buildDirective({ adjustment, week, thisWeek, fit, tsb, ramp, rampCap, c
       severity: 'info',
       framework: 'Friel',
       headline: `Form is ${signed(tsb)} in a ${week.phase} week — take the full ${week.target_tss} TSS including the ${week.long_session_h}h long session.`,
-      text: `TSB ${signed(tsb)} at CTL ${fit.ctl} means you are under-loaded for this phase rather than freshened for a reason. Ramp is ${ramp == null ? 'not yet measurable' : signed(ramp) + ' CTL/wk'} against a ${rampCap} cap, so there is headroom. Last week landed at ${comparison?.tssPct ?? '—'}% of target — the gap to close is volume, not intensity.`,
+      text: `You've got room here, and this is a good week to use it. TSB ${signed(tsb)} at CTL ${fit.ctl} means you are under-loaded for this phase rather than freshened for a reason — that's not a state to protect, it's fitness sitting on the table. Ramp is ${ramp == null ? 'not yet measurable' : signed(ramp) + ' CTL/wk'} against a ${rampCap} cap, so there is headroom. Last week landed at ${comparison?.tssPct ?? '—'}% of target — the gap to close is volume, not intensity.`,
     };
   }
 
@@ -504,7 +504,7 @@ function buildDirective({ adjustment, week, thisWeek, fit, tsb, ramp, rampCap, c
     severity: 'good',
     framework: 'Friel',
     headline: `Execute the plan: ${week.target_tss} TSS / ${week.target_hours}h, ${week.z1_2_pct}/${week.z3_4_pct}/${week.z5_pct} time split, ${week.long_session_h}h long session, ${week.strength_sessions} strength.`,
-    text: `TSB ${signed(tsb)} and ramp ${ramp == null ? 'n/a' : signed(ramp) + ' CTL/wk'} (cap ${rampCap}) are both inside limits for a ${week.phase} week${week.is_recovery ? ' (recovery)' : ''}, and last week landed at ${comparison?.tssPct ?? '—'}% of target. Nothing in the data argues for a change.`,
+    text: `Nothing to adjust this week — just execute. TSB ${signed(tsb)} and ramp ${ramp == null ? 'n/a' : signed(ramp) + ' CTL/wk'} (cap ${rampCap}) are both inside limits for a ${week.phase} week${week.is_recovery ? ' (recovery)' : ''}, and last week landed at ${comparison?.tssPct ?? '—'}% of target. When the numbers agree with the plan like this, the best thing I can tell you is to trust it and get the work done.`,
   };
 }
 
@@ -591,6 +591,8 @@ function renderMarkdown({ goal, thisWeek, ws, directive, flags, actions, governi
 
   L.push('## Where you are');
   L.push('');
+  L.push(narrateState(metrics));
+  L.push('');
   L.push(
     `Fitness (CTL) ${metrics.ctl} · Fatigue (ATL) ${metrics.atl} · Form (TSB) ${signed(metrics.tsb)} · ramp ${metrics.ramp == null ? 'n/a' : signed(metrics.ramp) + '/wk'}` +
       (metrics.ef.reliable ? ` · EF ${metrics.ef.recent} (${signed(metrics.ef.changePct)}% vs ${metrics.ef.baseline})` : ' · EF trend not yet reliable')
@@ -641,6 +643,37 @@ function renderMarkdown({ goal, thisWeek, ws, directive, flags, actions, governi
   }
 
   return L.join('\n');
+}
+
+/**
+ * One sentence, in plain coach language, glossing the same TSB/EF numbers
+ * printed right below it — never a claim the numbers don't support, just the
+ * reading a coach would give out loud before pointing at the table.
+ */
+function narrateState(metrics) {
+  const { tsb, ef } = metrics;
+  let s;
+  if (tsb == null) {
+    s = 'Not enough recent training data yet to read Form reliably.';
+  } else if (tsb <= -20) {
+    s = "Fatigue is running well ahead of fitness right now — that gap is the main thing driving this week's call, more than anything about the plan itself.";
+  } else if (tsb <= -10) {
+    s = "You're carrying a normal, productive amount of fatigue for a loading block — tired but not buried.";
+  } else if (tsb < 5) {
+    s = 'Fitness and fatigue are close to balanced right now — a stable, sustainable place to be building from.';
+  } else if (tsb < 15) {
+    s = "You're on the fresh side of neutral — nothing wrong with that, and there's room to load a bit more if the phase calls for it.";
+  } else {
+    s = "You're notably fresh relative to recent load — fine right before a race, but if there's no race this week that freshness is fitness sitting unused.";
+  }
+  if (ef.reliable && ef.changePct != null) {
+    if (ef.changePct <= -5) {
+      s += ' Efficiency has been sliding at matched effort too, which is usually the earlier warning sign — worth taking seriously even if TSB alone looks fine.';
+    } else if (ef.changePct >= 5) {
+      s += ' Efficiency is trending up at matched effort — a good sign the aerobic base is deepening underneath all this.';
+    }
+  }
+  return s;
 }
 
 function safeJson(s) {
