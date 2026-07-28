@@ -380,7 +380,6 @@ const DEFAULTS = {
   ef_if_max: '0.88',
   ef_min_minutes: '45',
   high_if_threshold: '0.80',
-  sims_enabled: '1',
   load_pattern: '3:1',
   max_ramp_base: '6',
   max_ramp_build: '4',

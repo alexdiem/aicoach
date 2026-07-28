@@ -20,7 +20,6 @@ const metrics = await import('../server/metrics.js');
 const planner = await import('../server/planner.js');
 const brief = await import('../server/brief.js');
 const backpain = await import('../server/backpain.js');
-const cycle = await import('../server/cycle.js');
 const { normaliseActivity, parseTags } = await import('../server/sync.js');
 const intervalsClient = await import('../server/intervals.js');
 
@@ -48,7 +47,7 @@ test('parseTags reads the intervals.icu description convention', () => {
     drops_minutes: 95, position: 'drops', back_pain: 'moderate', rpe: 8,
   });
   assert.equal(parseTags('nothing here'), null);
-  assert.equal(parseTags('Hills #upright #cycle:luteal_early').position, 'upright');
+  assert.equal(parseTags('Hills #upright #rpe:6').position, 'upright');
 });
 
 test('normaliseActivity derives VI and EF when intervals omits them', () => {
@@ -139,13 +138,18 @@ test('plan generation produces a periodized, ramping, recovery-punctuated plan',
   const peak = result.weeks.find((w) => w.phase === 'peak');
   assert.ok(peak.z1_2_pct >= 80, `peak Z1-2 was ${peak.z1_2_pct}%`);
 
-  // Sims: strength held at 2/wk through build and peak (Friel would cut it).
-  for (const w of result.weeks.filter((w) => w.phase.startsWith('build') || w.phase === 'peak')) {
-    assert.equal(w.strength_sessions, 2);
+  // Strength dosing follows the athlete's own logged seasonal pattern (a
+  // Personal calibration, not a Friel or Sims rule), not training phase.
+  for (const w of result.weeks.filter((w) => !['taper', 'race'].includes(w.phase))) {
+    assert.equal(w.strength_sessions, planner.seasonalStrengthSessions(w.start_date));
     const gov = JSON.parse(w.governing_json);
-    assert.ok(gov.some((g) => g.decision === 'strength frequency' && g.framework === 'Sims'));
-    assert.ok(gov.some((g) => g.alternative && /Friel/.test(g.alternative)));
+    assert.ok(gov.some((g) => g.decision === 'strength frequency' && g.framework === 'Personal'));
   }
+  for (const w of result.weeks.filter((w) => w.phase === 'taper')) {
+    assert.equal(w.strength_sessions, 1);
+  }
+  const raceWeek = result.weeks.find((w) => w.phase === 'race');
+  assert.equal(raceWeek.strength_sessions, 0);
 
   const saved = await planner.savePlan(result);
   assert.equal(saved.version, 1);
@@ -363,55 +367,57 @@ test('sparse pain data says so instead of inventing a pattern', async () => {
   assert.equal(await backpain.painFlag({ asOf: TODAY, days: 60 }), null);
 });
 
-test('cycle features stay inert until data is logged, then govern the taper', async () => {
-  assert.equal(await cycle.hasCycleData(), false);
-  const before = await planner.generatePlan(goalId, { reason: 'no-cycle' });
-  assert.equal(before.cycle.enabled, false);
-  assert.ok(before.weeks.every((w) => !JSON.parse(w.governing_json).some((g) => g.decision === 'taper depth')));
-
-  // Log period starts such that race week lands in the luteal phase.
-  const goal = await db.prepare('SELECT * FROM goals WHERE id = ?').get(goalId);
-  const raceWeek = weekStart(goal.event_date);
-  // Day 1 of a 28-day cycle placed so race week starts ~day 20 (luteal_early).
-  let anchor = addDays(raceWeek, -19);
-  for (let k = 0; k < 4; k++) {
-    await db
-      .prepare(`INSERT OR REPLACE INTO daily_logs (date, period_start, updated_at) VALUES (?,1,?)`)
-      .run(addDays(anchor, -28 * k), new Date().toISOString());
-  }
-  assert.equal(await cycle.hasCycleData(), true);
-  assert.equal((await cycle.cycleModel()).lengthDays, 28);
-  const ph = await cycle.phaseFor(raceWeek);
-  assert.equal(ph.phase, 'luteal_early');
-
-  const after = await planner.generatePlan(goalId, { reason: 'with-cycle' });
-  assert.equal(after.cycle.enabled, true);
-  assert.equal(after.cycle.raceInHighHormone, true);
-  const taperGov = after.weeks
-    .filter((w) => w.phase === 'taper')
-    .flatMap((w) => JSON.parse(w.governing_json))
-    .filter((g) => g.decision === 'taper depth');
-  assert.ok(taperGov.length >= 1, 'expected a Sims taper override');
-  assert.equal(taperGov[0].framework, 'Sims');
-  assert.match(taperGov[0].reason, /high-hormone/);
-  assert.match(taperGov[0].alternative, /Friel/);
-
-  // Sims taper is strictly lighter than the Friel default it replaced.
-  const taperAfter = after.weeks.filter((w) => w.phase === 'taper').map((w) => w.target_tss);
-  const taperBefore = before.weeks.filter((w) => w.phase === 'taper').map((w) => w.target_tss);
-  assert.ok(taperAfter[0] < taperBefore[0], `${taperAfter[0]} should be below ${taperBefore[0]}`);
-});
-
-test('plan stays fully functional with Sims data absent', async () => {
+test('plan and brief work fine with no daily-log data at all', async () => {
   await db.exec('DELETE FROM daily_logs');
-  await setSetting('sims_enabled', '0');
-  const r = await planner.generatePlan(goalId, { reason: 'sims-off' });
+  const r = await planner.generatePlan(goalId, { reason: 'no-daily-logs' });
   assert.ok(r.weeks.length > 0);
   assert.ok(r.weeks.every((w) => w.target_tss > 0 && w.target_hours > 0));
   const b = await brief.buildBrief({ goalId, asOf: TODAY });
   assert.ok(b.headline.length > 0);
   assert.ok(!b.flags.some((f) => f.id === 'cycle'));
-  await setSetting('sims_enabled', '1');
+});
+
+test('base-phase key sessions vary week to week rather than repeating verbatim', async () => {
+  const r = await planner.generatePlan(goalId, { reason: 'variety-check' });
+  const base = r.weeks.filter((w) => w.phase === 'base1' || w.phase === 'base2' || w.phase === 'base3');
+  const distinctTempoOrSweetSpot = new Set(
+    base.map((w) => JSON.parse(w.key_sessions_json).find((s) => s.name === 'Tempo' || s.name === 'Sweet spot')?.detail)
+  );
+  assert.ok(distinctTempoOrSweetSpot.size > 1, 'expected more than one distinct quality-session variant across the base phase');
+});
+
+test('TSB around -20 mid-block does not trigger a load-cutting warn, but the same TSB in taper does', async () => {
+  const generated = await planner.generatePlan(goalId, { reason: 'block-aware-check' });
+  await planner.savePlan(generated);
+  const loadWeek = generated.weeks.find((w) => !w.is_recovery && ['base1', 'base2', 'base3'].includes(w.phase));
+  const taperWeek = generated.weeks.find((w) => w.phase === 'taper');
+  assert.ok(loadWeek, 'expected a non-recovery base week');
+  assert.ok(taperWeek, 'expected a taper week');
+
+  // Hold TSB flat at -20 across the 8-day lookback fitnessSeries/rampRate use,
+  // so ramp is ~0 and only the tsb-low rule is in play.
+  async function forceFlatTsb(asOf) {
+    await db.exec('DELETE FROM wellness');
+    for (let d = -8; d <= 0; d++) {
+      await db.prepare('INSERT OR REPLACE INTO wellness (date, ctl, atl) VALUES (?,60,80)').run(addDays(asOf, d));
+    }
+  }
+
+  await forceFlatTsb(loadWeek.start_date);
+  const loadBrief = await brief.buildBrief({ goalId, asOf: loadWeek.start_date });
+  assert.ok(
+    !loadBrief.governing.some((g) => g.decision.includes('tsb-low')),
+    'expected no tsb-low adjustment for a load week not yet at its scheduled recovery week'
+  );
+
+  await forceFlatTsb(taperWeek.start_date);
+  const taperBrief = await brief.buildBrief({ goalId, asOf: taperWeek.start_date });
+  assert.ok(
+    taperBrief.governing.some((g) => g.decision.includes('tsb-low')),
+    'expected tsb-low to still apply in taper, where freshness matters'
+  );
+
+  await db.exec('DELETE FROM wellness');
 });
 
 test('weekly run writes a brief and a new plan version', async () => {

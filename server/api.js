@@ -15,7 +15,6 @@ import {
 } from './planner.js';
 import { buildBrief, saveBrief, getBrief, listBriefs, runWeekly } from './brief.js';
 import { painCorrelation, upsertRideLog, loggedRides, recentPain } from './backpain.js';
-import { cycleSummary, hasCycleData, phaseFor, phaseForWeek } from './cycle.js';
 import { authEnabled, checkPassword, createSessionCookie, clearSessionCookie } from './auth.js';
 
 const MASK = '••••••••';
@@ -46,14 +45,13 @@ export const routes = {
 
   'GET /api/status': async () => {
     const goal = await activeGoal();
-    const [plan, fit, settings, hasApiKey, athlete, sync, cycleDataPresent, actCount, rideCount, briefCount, jobFailures] = await Promise.all([
+    const [plan, fit, settings, hasApiKey, athlete, sync, actCount, rideCount, briefCount, jobFailures] = await Promise.all([
       goal ? activePlan(goal.id) : null,
       currentFitness(),
       maskedSettings(),
       getSetting('intervals_api_key'),
       getAthlete(),
       lastSync(),
-      hasCycleData(),
       db.prepare('SELECT COUNT(*) c FROM activities').get(),
       db.prepare('SELECT COUNT(*) c FROM ride_logs').get(),
       db.prepare('SELECT COUNT(*) c FROM briefs').get(),
@@ -69,7 +67,6 @@ export const routes = {
       goal,
       plan: plan ? { ...plan, notes: safeJson(plan.notes_json), params: safeJson(plan.params_json) } : null,
       fitness: { ...fit, ramp },
-      cycleDataPresent,
       counts: { activities: actCount.c, rideLogs: rideCount.c, briefs: briefCount.c },
       today: today(),
     };
@@ -199,19 +196,15 @@ export const routes = {
     if (!goal) return { goal: null, plan: null, weeks: [] };
     const plan = await activePlan(goal.id);
     if (!plan) return { goal, plan: null, weeks: [] };
-    const [rawWeeks, cycleOn, versions] = await Promise.all([
+    const [rawWeeks, versions] = await Promise.all([
       planWeeks(plan.id),
-      hasCycleData(),
       db.prepare('SELECT id, version, generated_at, reason, active FROM plans WHERE goal_id = ? ORDER BY version DESC').all(goal.id),
     ]);
-    const weeks = await Promise.all(
-      rawWeeks.map(async (w) => ({
-        ...w,
-        key_sessions: safeJson(w.key_sessions_json) || [],
-        governing: safeJson(w.governing_json) || [],
-        cycle: cycleOn ? await phaseForWeek(w.start_date) : null,
-      }))
-    );
+    const weeks = rawWeeks.map((w) => ({
+      ...w,
+      key_sessions: safeJson(w.key_sessions_json) || [],
+      governing: safeJson(w.governing_json) || [],
+    }));
     // Attach actuals for weeks that have already happened.
     const cur = weekStart(today());
     await Promise.all(
@@ -301,9 +294,6 @@ export const routes = {
 
   'GET /api/backpain/events': async ({ query }) => recentPain({ days: parseInt(query.days || '90', 10) }),
 
-  // --- optional Sims inputs ------------------------------------------------
-  'GET /api/cycle': async () => cycleSummary(),
-
   'GET /api/daily-logs': async ({ query }) => {
     const to = query.to || today();
     const from = query.from || addDays(to, -parseInt(query.days || '90', 10));
@@ -376,7 +366,6 @@ function planSummary(result) {
     demand: result.demand,
     targets: result.targets,
     notes: result.notes,
-    cycle: result.cycle,
     weeks: result.weeks.length,
     phases: result.weeks.reduce((acc, w) => {
       acc[w.phase] = (acc[w.phase] || 0) + 1;

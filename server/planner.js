@@ -6,16 +6,15 @@
 // load progression, 3:1 loading blocks, specificity near the event, taper length
 // scaled to event duration.
 //
-// Sims (female physiology) governs *anything where the two disagree*: strength
-// dosing through build/peak, fuelling around hard sessions, and cycle-phase
-// placement of intensity including the taper. Each override is recorded in
-// plan_weeks.governing_json with the framework named and the reason given —
-// nothing is silently averaged.
+// Strength dosing follows the athlete's own logged seasonal pattern (see
+// seasonalStrengthSessions below) rather than a framework-derived rule —
+// calibrated directly against what she has actually sustained, not eyeballed.
+// Each override is recorded in plan_weeks.governing_json with the reason
+// given — nothing is silently averaged.
 
 import { db, dbTransaction, getSetting, getSettingNum, getAthlete } from './db.js';
 import { addDays, clamp, daysBetween, isoDate, mean, round, today, weekStart } from './util.js';
 import { currentFitness, recentWeeks, efTrend } from './metrics.js';
-import { hasCycleData, phaseForWeek, simsAdjustment } from './cycle.js';
 
 // TSS accumulated per hour at the centre of each intensity band.
 // Z1-2 ≈ IF 0.62, Z3-4 ≈ IF 0.87, Z5+ ≈ IF 1.0  (TSS/h = IF² × 100)
@@ -186,6 +185,25 @@ export function allocatePhases(totalWeeks, eventHours, startCtl, targetCtl) {
   return seq.slice(0, W);
 }
 
+// --- strength dosing ---------------------------------------------------------
+
+/**
+ * Strength frequency by calendar month, not training phase — this is the
+ * athlete's own logged, sustained pattern (light in summer, heaviest in
+ * winter), not a framework-derived rule.
+ */
+export function seasonalStrengthSessions(dateStr) {
+  const month = Number(dateStr.slice(5, 7));
+  if (month >= 6 && month <= 8) return 1; // summer: Jun-Aug
+  if (month === 12 || month <= 2) return 3; // winter: Dec-Feb
+  return 2; // spring/autumn: Mar-May, Sep-Nov
+}
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
 // --- key sessions -----------------------------------------------------------
 
 function keySessions(phase, cls, goal, ctx) {
@@ -193,46 +211,73 @@ function keySessions(phase, cls, goal, ctx) {
   const longH = ctx.longHours;
   const s = [];
   const climbNote = climbHeavy ? ' on sustained climbs (course is ' + round(goal.elevation_m / goal.distance_km, 0) + ' m/km)' : '';
+  const strength = ctx.strength ?? 2;
+  const strengthX = `${strength}×/wk`;
+  // Rotates every week within a multi-week base block so a long base period
+  // isn't the same three sessions repeated verbatim for a month straight.
+  const variant = (ctx.weekIndex ?? 0) % 3;
 
   switch (phase) {
     case 'prep':
       s.push({ name: 'Aerobic ride', detail: `2× ${round(longH * 0.5, 1)}h steady Z2, cadence 85–95` });
-      s.push({ name: 'Strength', detail: 'Anatomical adaptation: 2× full-body, 3×12 at moderate load' });
+      s.push({ name: 'Strength', detail: `Anatomical adaptation: ${strengthX} full-body, 3×12 at moderate load` });
       break;
     case 'base1':
-    case 'base2':
-      s.push({ name: 'Long endurance', detail: `${longH}h Z2, negative-split the second half` });
-      s.push({ name: 'Tempo', detail: `3× 15 min at 76–85% FTP${climbNote}, 5 min easy between` });
-      s.push({ name: 'Strength', detail: 'Max-strength: 2× lower-body, 4×4–6 at 80–85% 1RM + plyometrics' });
+    case 'base2': {
+      const endurance = [
+        `${longH}h Z2, negative-split the second half`,
+        `${longH}h Z2, steady effort throughout — focus on cadence (85–95) and fuelling rhythm`,
+        `${longH}h Z2 with 3× 5 min at 95+ rpm worked in through the ride`,
+      ][variant];
+      const tempo = [
+        `3× 15 min at 76–85% FTP${climbNote}, 5 min easy between`,
+        `4× 10 min at 78–88% FTP${climbNote}, 4 min easy between`,
+        `2× 20 min at 75–83% FTP${climbNote}, 8 min easy between`,
+      ][variant];
+      s.push({ name: 'Long endurance', detail: endurance });
+      s.push({ name: 'Tempo', detail: tempo });
+      s.push({ name: 'Strength', detail: `Max-strength: ${strengthX} lower-body, 4×4–6 at 80–85% 1RM + plyometrics` });
       break;
-    case 'base3':
-      s.push({ name: 'Long endurance', detail: `${longH}h Z2 with 3× 20 min at 80–85% FTP in the last third` });
-      s.push({ name: 'Sweet spot', detail: `4× 12 min at 88–93% FTP${climbNote}` });
-      s.push({ name: 'Strength', detail: 'Max-strength: 2× lower-body, 4×4–6 at 85% 1RM + plyometrics' });
+    }
+    case 'base3': {
+      const endurance = [
+        `${longH}h Z2 with 3× 20 min at 80–85% FTP in the last third`,
+        `${longH}h Z2 with a single 45 min block at 82–87% FTP mid-ride`,
+        `${longH}h Z2, progressive — last hour held at 80–85% FTP`,
+      ][variant];
+      const sweetSpot = [
+        `4× 12 min at 88–93% FTP${climbNote}`,
+        `3× 15 min at 90–95% FTP${climbNote}`,
+        `5× 9 min at 86–92% FTP${climbNote}, 1 min surge to 105% at the end of each rep`,
+      ][variant];
+      s.push({ name: 'Long endurance', detail: endurance });
+      s.push({ name: 'Sweet spot', detail: sweetSpot });
+      s.push({ name: 'Strength', detail: `Max-strength: ${strengthX} lower-body, 4×4–6 at 85% 1RM + plyometrics` });
       break;
+    }
     case 'build1':
       s.push({ name: 'Threshold', detail: `3× 15 min at 95–102% FTP${climbNote}, 6 min recovery` });
       s.push({ name: 'Long specific', detail: cls === 'ultra' || cls === 'long'
         ? `${longH}h at target event pace, fuelled at the rate you'll use on the day`
         : `${longH}h with 2× 20 min at goal-event intensity` });
-      s.push({ name: 'Strength', detail: 'Max-strength maintained at 2×/wk, 3×5 heavy' });
+      s.push({ name: 'Strength', detail: `Max-strength maintained at ${strengthX}, 3×5 heavy` });
       break;
     case 'build2':
       s.push({ name: 'VO2', detail: '5× 4 min at 108–118% FTP, equal recovery' });
       s.push({ name: 'Race simulation', detail: cls === 'ultra'
         ? `Back-to-back: ${longH}h then ${round(longH * 0.7, 1)}h next day, full event kit and fuelling`
         : `${longH}h with race-pace blocks and full event fuelling` });
-      s.push({ name: 'Strength', detail: 'Power emphasis: 2×/wk, 3×3 heavy + explosive jumps' });
+      s.push({ name: 'Strength', detail: `Power emphasis: ${strengthX}, 3×3 heavy + explosive jumps` });
       break;
     case 'peak':
       s.push({ name: 'Sharpening', detail: '2× session of 8× 2 min at 110% FTP or 6× 3 min at goal intensity' });
       s.push({ name: 'Specificity ride', detail: `${longH}h dress-rehearsal: event kit, event fuelling, event position` });
-      s.push({ name: 'Strength', detail: '2×/wk kept, load held, volume cut to 2×4 — maintains bone and power' });
+      s.push({ name: 'Strength', detail: `${strengthX} kept, load held, volume cut to 2×4 — maintains bone and power` });
       break;
     case 'taper':
       s.push({ name: 'Openers', detail: 'Every 2–3 days: 4× 90 s at goal intensity inside an otherwise easy ride' });
       s.push({ name: 'Volume', detail: 'Frequency unchanged, duration cut — do not add rest days' });
-      s.push({ name: 'Strength', detail: '1×/wk, load kept, volume halved' });
+      s.push({ name: 'Strength', detail: `${strengthX}, load kept, volume halved` });
       break;
     case 'race':
       s.push({ name: 'Event', detail: goal.name });
@@ -299,12 +344,6 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
     });
   }
 
-  // Cycle-aware taper decision (Sims overrides Friel where they diverge).
-  const simsEnabled = (await getSetting('sims_enabled', '1')) === '1';
-  const cycleOn = simsEnabled && (await hasCycleData());
-  const raceWeekPhase = cycleOn ? await phaseForWeek(eventWeek) : null;
-  const raceInHighHormone = raceWeekPhase && (raceWeekPhase.hormoneState === 'high');
-
   // Starting weekly load: whichever of current CTL or recent real weekly load is
   // higher, so we never prescribe a step down into week 1 by accident.
   const startWeekly = Math.max(startCtl * 7, adapt.actualWeeklyMean || 0);
@@ -355,17 +394,7 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
       // Friel: hold frequency and intensity, cut duration progressively.
       const schedule =
         taperLen >= 3 ? [0.75, 0.55, 0.4] : taperLen === 2 ? [0.65, 0.45] : [0.5];
-      let factor = schedule[Math.min(taperIdx, schedule.length - 1)];
-      if (raceInHighHormone) {
-        // ---- Friel vs Sims divergence, resolved in Sims' favour ----
-        factor = Math.max(0.3, factor - 0.08);
-        governing.push({
-          decision: 'taper depth',
-          framework: 'Sims',
-          reason: `Race week is predicted to fall in the ${raceWeekPhase.phase.replace('_', ' ')} (high-hormone) phase. Core temperature runs 0.3–0.5 °C higher and plasma volume is lower, so residual fatigue costs more on the day. Volume cut a further 8 percentage points to ${round(factor * 100, 0)}% of peak instead of Friel's generic ${round(schedule[Math.min(taperIdx, schedule.length - 1)] * 100, 0)}%.`,
-          alternative: `Friel's taper for a ${round(demand.hours, 0)}h event: ${taperLen} weeks at ${schedule.map((f) => round(f * 100, 0) + '%').join(' / ')} of peak volume, independent of cycle phase.`,
-        });
-      }
+      const factor = schedule[Math.min(taperIdx, schedule.length - 1)];
       targetTss = round(peakLoadingTss * factor, 0);
     } else if (isRecovery) {
       targetTss = round(lastLoadingTss * 0.55, 0);
@@ -388,54 +417,24 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
       targetTss = Math.max(targetTss, round(ctl * 7 * 0.8, 0));
     }
 
-    // ---- Sims overlays -----------------------------------------------------
-    let cyclePhase = null;
-    let simsNotes = [];
-    let fuelling = [];
-    if (cycleOn) {
-      const wk = await phaseForWeek(ws);
-      cyclePhase = wk.phase;
-      const adj = wk.phase ? simsAdjustment(wk.phase) : null;
-      if (adj && phase !== 'race') {
-        const before = targetTss;
-        targetTss = round(targetTss * adj.tssMultiplier, 0);
-        simsNotes = adj.notes;
-        fuelling = adj.fuelling;
-        if (adj.tssMultiplier !== 1 || adj.intensityShift !== 0) {
-          governing.push({
-            decision: 'weekly load and intensity placement',
-            framework: 'Sims',
-            reason:
-              adj.hormone === 'high'
-                ? `Predicted ${wk.phase.replace('_', ' ')} phase (${wk.confidence}). Load set to ${targetTss} TSS instead of ${before} (×${adj.tssMultiplier}) and the hardest intervals moved out of this week — high progesterone raises core temperature and lowers plasma volume, so the same power costs more.`
-                : `Predicted ${wk.phase.replace('_', ' ')} phase (${wk.confidence}). Low-hormone window: load set to ${targetTss} TSS (×${adj.tssMultiplier}) and quality sessions concentrated here, where adaptation to intensity and heavy strength is highest.`,
-            alternative: 'Friel would set this week purely by block position, ignoring cycle phase.',
-          });
-        }
-        if (adj.intensityShift < 0) {
-          const move = Math.min(dist.z5, 2);
-          dist.z5 = round(dist.z5 - move, 1);
-          dist.z1_2 = round(dist.z1_2 + move, 1);
-        } else if (adj.intensityShift > 0 && dist.z1_2 > 70) {
-          const move = 2;
-          dist.z1_2 = round(dist.z1_2 - move, 1);
-          dist.z5 = round(dist.z5 + move, 1);
-        }
-      }
-    }
-
-    // Strength: Sims governs. Friel reduces strength to maintenance (1×/wk or
-    // dropped) once Build starts; Sims keeps heavy resistance twice weekly
-    // year-round for bone density and neuromuscular power.
-    let strength = 2;
-    if (phase === 'race') strength = 0;
-    else if (phase === 'taper') strength = 1;
-    if (simsEnabled && (phase.startsWith('build') || phase === 'peak')) {
+    // Strength: dosed by calendar month against the athlete's own logged
+    // seasonal pattern, not by training phase.
+    let strength;
+    if (phase === 'race') {
+      strength = 0;
+    } else if (phase === 'taper') {
+      strength = 1;
       governing.push({
         decision: 'strength frequency',
-        framework: 'Sims',
-        reason: `Held at 2 heavy sessions/wk through ${phase}. Sims treats heavy resistance + plyometrics as non-negotiable for bone density and neuromuscular power, not as a base-phase accessory.`,
-        alternative: 'Friel drops strength to 1×/wk maintenance (or omits it) once Build starts, to protect bike-specific quality sessions.',
+        framework: 'Personal',
+        reason: 'Taper: cut to 1×/wk regardless of season.',
+      });
+    } else {
+      strength = seasonalStrengthSessions(ws);
+      governing.push({
+        decision: 'strength frequency',
+        framework: 'Personal',
+        reason: `${strength}×/wk for ${MONTH_NAMES[Number(ws.slice(5, 7)) - 1]} — logged seasonal pattern (1×/wk Jun-Aug, 2×/wk Mar-May & Sep-Nov, 3×/wk Dec-Feb), not tied to training phase.`,
       });
     }
 
@@ -452,9 +451,8 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
     for (let d = 0; d < 7; d++) simCtl += (targetTss / 7 - simCtl) / 42;
     ctl = simCtl;
 
-    const ctx = { longHours: longH };
+    const ctx = { longHours: longH, strength, weekIndex: i };
     const sessions = keySessions(phase, cls, goal, ctx);
-    if (fuelling.length) sessions.push({ name: 'Fuelling (Sims)', detail: fuelling.join(' ') });
 
     weeks.push({
       week_index: i + 1,
@@ -476,9 +474,7 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
       projected_ctl: round(ctl, 1),
       focus: focusFor(phase, cls),
       governing_json: JSON.stringify(governing),
-      notes: [cyclePhase ? `Predicted cycle phase: ${cyclePhase.replace('_', ' ')}.` : null, ...simsNotes]
-        .filter(Boolean)
-        .join(' ') || null,
+      notes: null,
     });
 
     if (!isRecovery && phase !== 'taper' && phase !== 'race') {
@@ -519,7 +515,6 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
     },
     adapt,
     notes,
-    cycle: cycleOn ? { enabled: true, raceWeekPhase: raceWeekPhase?.phase || null, raceInHighHormone } : { enabled: false },
     weeks,
     reason,
     generatedAt: new Date().toISOString(),
@@ -664,7 +659,7 @@ export async function savePlan(result) {
         version,
         result.generatedAt,
         result.reason,
-        JSON.stringify({ demand: result.demand, targets: result.targets, adapt: result.adapt, cycle: result.cycle }),
+        JSON.stringify({ demand: result.demand, targets: result.targets, adapt: result.adapt }),
         JSON.stringify(result.notes),
       ]
     );

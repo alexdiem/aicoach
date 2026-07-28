@@ -4,18 +4,21 @@ A personal endurance training planner. It takes a goal event, pulls your actual
 training from intervals.icu, generates a periodized plan, and writes you a short
 weekly brief that says what to do and cites the numbers that drove it.
 
-Two frameworks, explicitly separated:
+Two sources govern the plan, explicitly separated:
 
 - **Joe Friel (Training Bible)** governs *structure* — phase sequence, CTL/ATL/TSB-driven
   load progression, 3:1 loading blocks, specificity near the event, taper length scaled
   to event duration.
-- **Stacy Sims (female physiology)** governs *every decision where the two disagree* —
-  strength dosing through build/peak, fuelling around hard sessions, and cycle-phase
-  placement of intensity including the taper.
+- **Stacy Sims (female physiology)** governs fuelling around hard sessions and
+  low-energy-availability screening.
 
-Nothing is averaged. Every divergent decision is stored with the framework that won,
-the reason, and the alternative that was not taken, and it shows up in the UI under
-"Framework calls".
+Strength frequency is dosed against the athlete's own logged, sustained seasonal
+pattern (light in summer, heaviest in winter) rather than derived from either
+framework — calibrated against what has actually proven sustainable, not eyeballed.
+
+Nothing is averaged. Every divergent decision is stored with the framework (or
+"Personal", for the seasonal strength calibration) that won, the reason, and the
+alternative that was not taken, and it shows up in the UI under "Framework calls".
 
 ## Quick start
 
@@ -182,7 +185,7 @@ optional time in drops, RPE and notes — either in the **Log** tab, or by taggi
 activity description in intervals.icu, which syncs across automatically:
 
 ```
-#drops   #upright   #mixed   #drops:90   #pain:moderate   #rpe:8   #cycle:luteal_early
+#drops   #upright   #mixed   #drops:90   #pain:moderate   #rpe:8
 ```
 
 Manual edits in the app always win over tags.
@@ -193,28 +196,29 @@ indistinguishable from "long rides hurt". It also compares VI and time-in-drops 
 vs pain-free rides. It is counts and rates over the underlying rides, not a model, and
 it says so plainly when there isn't enough data yet.
 
-## Optional Sims inputs
+## Optional intake logging
 
-Everything Sims-specific is an opt-in add-on. **The plan is fully functional with none
-of it**, and the app never asks you to log anything.
+Logging daily intake/protein is an opt-in add-on. **The plan is fully functional
+without it**, and the app never asks you to log anything.
 
 | If you log… | You get |
 | --- | --- |
-| period start dates (or cycle phase) | cycle-phase periodization: quality work placed in the low-hormone window, load trimmed ~5–10% and top-end intervals moved out of the high-hormone window, phase-specific fuelling notes, and a cycle-aware taper |
 | daily intake / protein | low-energy-availability screening, and a protein-target flag against 2.0 g/kg |
 
-Cycle phase is also read from intervals.icu wellness if you track it there.
+### Strength dosing
+
+Strength frequency follows a fixed seasonal calendar rather than training phase:
+1×/wk June–August, 2×/wk March–May and September–November, 3×/wk December–February,
+cut to 1×/wk in taper and dropped in race week. This is a personal calibration
+against what's actually been sustained, not a Friel or Sims rule — recorded in
+"Framework calls" as `Personal`.
 
 ### Where Friel and Sims diverge
 
 | Decision | Winner | Why |
 | --- | --- | --- |
-| Strength through Build/Peak | **Sims** | Held at 2 heavy sessions/wk for bone density and neuromuscular power. Friel drops to 1×/wk maintenance to protect bike-specific quality. |
-| Taper depth when the race falls in a high-hormone phase | **Sims** | Higher core temperature and lower plasma volume mean residual fatigue costs more on the day, so volume is cut a further 8 points below Friel's duration-scaled taper. |
-| Weekly load and intensity placement, given cycle data | **Sims** | Friel would set the week from block position alone. |
-| Phase sequence, ramp rate, recovery weeks, taper length | **Friel** | Sims does not contradict the periodization structure. |
-
-Without cycle data, only the strength row applies; the rest of the plan is pure Friel.
+| Fuelling around hard sessions, low-energy-availability screening | **Sims** | Friel doesn't model this. |
+| Phase sequence, ramp rate, recovery weeks, taper length | **Friel** | The periodization structure itself. |
 
 ## Stack
 
@@ -231,8 +235,7 @@ server/
   intervals.js      intervals.icu API client
   sync.js           ingestion, normalisation, #tag parsing
   metrics.js        CTL/ATL/TSB, EF trend, VI drift, W'bal, distribution, compliance
-  cycle.js          optional menstrual-cycle model + Sims adjustments
-  planner.js        event demand model, phase allocation, load ramp, Sims overlays
+  planner.js        event demand model, phase allocation, load ramp, seasonal strength dosing
   brief.js          the weekly rule engine and its markdown output
   backpain.js       position/pain cross-tabs
   api.js            JSON routes (the route table itself)
