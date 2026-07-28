@@ -5,6 +5,9 @@
 // same code works in both places.
 
 import { matchRoute } from './api.js';
+import { isAuthenticated } from './auth.js';
+
+const PUBLIC_ROUTES = new Set(['POST /api/login']);
 
 export function sendJson(res, status, payload) {
   const body = JSON.stringify(payload ?? null);
@@ -44,10 +47,14 @@ export async function handleApiRequest(req, res, { pathname, searchParams }) {
   const route = matchRoute(req.method, pathname);
   if (!route) return sendJson(res, 404, { error: `No route for ${req.method} ${pathname}` });
 
+  if (!PUBLIC_ROUTES.has(`${req.method} ${pathname}`) && !isAuthenticated(req)) {
+    return sendJson(res, 401, { error: 'unauthorized' });
+  }
+
   try {
     const body = req.method === 'GET' || req.method === 'DELETE' ? null : await readBody(req);
     const query = Object.fromEntries(searchParams.entries());
-    const out = await route.handler({ body, query, params: route.params, req });
+    const out = await route.handler({ body, query, params: route.params, req, res });
     sendJson(res, 200, out);
   } catch (err) {
     const status = err.status || (err.name === 'IntervalsError' ? err.status || 502 : 500);

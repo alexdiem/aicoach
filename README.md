@@ -93,6 +93,7 @@ correlation, the frontend — is the identical code running in both places.
    | `TURSO_DATABASE_URL` | from step 1 | yes — without it the app has nowhere to persist data |
    | `TURSO_AUTH_TOKEN` | from step 1 | yes |
    | `CRON_SECRET` | any random string | recommended — without it `/api/cron` is unauthenticated (harmless, but locking it down is one field) |
+   | `AICOACH_PASSWORD` | a password you choose | strongly recommended — without it the deployed app (and everything in it: cycle data, back pain logs, your intervals.icu key) is reachable by anyone with the URL. Once set, the app shell and every `/api/*` route require this password, via a session cookie or `Authorization: Bearer <password>` |
 
 4. **Redeploy** after setting the env vars (Vercel doesn't hot-reload environment
    changes into a running deployment). Then open the deployed URL and go to **Settings**

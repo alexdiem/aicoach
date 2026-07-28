@@ -3,8 +3,14 @@
   "routes": [
     { "src": "/api/cron", "dest": "/api/cron" },
     { "src": "/api/(.*)", "dest": "/api" },
+    { "src": "/", "dest": "/api" },
+    { "src": "/index.html", "dest": "/api" },
+    { "src": "/app.js", "dest": "/api" },
     { "handle": "filesystem" }
   ],
+  "functions": {
+    "api/index.js": { "includeFiles": "public/**" }
+  },
   "crons": [
     { "path": "/api/cron", "schedule": "0 6 * * *" }
   ]

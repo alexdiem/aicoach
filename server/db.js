@@ -246,6 +246,17 @@ CREATE TABLE IF NOT EXISTS sync_runs (
   wellness    INTEGER,
   message     TEXT
 );
+
+-- Outstanding background-job failures (scheduled sync, weekly replan, the
+-- cron dispatch itself). A job's rows are cleared the next time that same
+-- job succeeds, so this table only ever holds *unresolved* failures — the
+-- UI can show it directly without separately tracking whether it's stale.
+CREATE TABLE IF NOT EXISTS job_failures (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  job         TEXT NOT NULL,
+  occurred_at TEXT NOT NULL,
+  message     TEXT
+);
 `;
 
 let readyPromise = null;
@@ -415,6 +426,24 @@ export async function getAthlete() {
       sex: null,
     }
   );
+}
+
+// --- job failure tracking ---------------------------------------------------
+
+export async function recordJobFailure(job, message) {
+  await dbRun('INSERT INTO job_failures (job, occurred_at, message) VALUES (?, ?, ?)', [
+    job,
+    new Date().toISOString(),
+    message || null,
+  ]);
+}
+
+export async function clearJobFailures(job) {
+  await dbRun('DELETE FROM job_failures WHERE job = ?', [job]);
+}
+
+export async function activeJobFailures() {
+  return dbAll('SELECT * FROM job_failures ORDER BY id DESC', []);
 }
 
 export async function upsertAthlete(a) {

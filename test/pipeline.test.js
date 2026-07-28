@@ -165,6 +165,57 @@ test('regeneration preserves past weeks and bumps the version', async () => {
   assert.equal(count.c, 1);
 });
 
+test('target_metric/target_value are checked against the plan\'s projected fitness', async () => {
+  // A target the plan's FTP growth can't plausibly reach: note this out loud.
+  const farInfo = await db
+    .prepare(
+      `INSERT INTO goals (name, kind, sport, event_date, start_date, priority, distance_km, elevation_m, support,
+         target_metric, target_value, status, created_at)
+       VALUES ('FTP test','metric','Ride',?,?,'A',null,null,'supported','ftp',400,'active',?)`
+    )
+    .run(addDays(TODAY, 7 * 16), TODAY, new Date().toISOString());
+  const farGoalId = Number(farInfo.lastInsertRowid);
+  const far = await planner.generatePlan(farGoalId, { reason: 'test-target' });
+  assert.ok(far.notes.some((n) => n.type === 'target-gap' && /400W/.test(n.text)));
+
+  // A target well below current FTP: always reachable regardless of this
+  // plan's exact CTL trajectory, so this must never read as a gap.
+  const nearInfo = await db
+    .prepare(
+      `INSERT INTO goals (name, kind, sport, event_date, start_date, priority, support,
+         target_metric, target_value, status, created_at)
+       VALUES ('FTP test near','metric','Ride',?,?,'A','supported','power',200,'active',?)`
+    )
+    .run(addDays(TODAY, 7 * 16), TODAY, new Date().toISOString());
+  const nearGoalId = Number(nearInfo.lastInsertRowid);
+  const near = await planner.generatePlan(nearGoalId, { reason: 'test-target' });
+  assert.ok(near.notes.some((n) => n.type === 'target-on-track'));
+  assert.ok(!near.notes.some((n) => n.type === 'target-gap'));
+
+  // A metric the planner has no model for: surfaced as unchecked, not silently dropped.
+  const paceInfo = await db
+    .prepare(
+      `INSERT INTO goals (name, kind, sport, event_date, start_date, priority, support,
+         target_metric, target_value, status, created_at)
+       VALUES ('Pace test','metric','Run',?,?,'A','supported','pace',4.5,'active',?)`
+    )
+    .run(addDays(TODAY, 7 * 16), TODAY, new Date().toISOString());
+  const paceGoalId = Number(paceInfo.lastInsertRowid);
+  const pace = await planner.generatePlan(paceGoalId, { reason: 'test-target' });
+  assert.ok(pace.notes.some((n) => n.type === 'target-unchecked' && /pace/.test(n.text)));
+
+  // No target set at all: no target-related note, and nothing throws.
+  const noneInfo = await db
+    .prepare(
+      `INSERT INTO goals (name, kind, sport, event_date, start_date, priority, support, status, created_at)
+       VALUES ('No target test','metric','Ride',?,?,'A','supported','active',?)`
+    )
+    .run(addDays(TODAY, 7 * 16), TODAY, new Date().toISOString());
+  const noneGoalId = Number(noneInfo.lastInsertRowid);
+  const none = await planner.generatePlan(noneGoalId, { reason: 'test-target' });
+  assert.ok(!none.notes.some((n) => n.type?.startsWith('target-')));
+});
+
 test('brief cites numbers and reacts to deep fatigue', async () => {
   const b1 = await brief.buildBrief({ goalId, asOf: TODAY });
   assert.ok(b1.headline.length > 0);

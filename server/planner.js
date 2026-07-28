@@ -501,6 +501,9 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
     });
   }
 
+  const targetNote = checkTargetMetric(goal, athlete, startCtl, achievableCtl);
+  if (targetNote) notes.push(targetNote);
+
   return {
     goal,
     demand: { ...demand, class: cls, eventIF: round(eventIF, 2), eventTss },
@@ -520,6 +523,47 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
     weeks,
     reason,
     generatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * goals.target_metric/target_value ("ftp" @ 260W, say) are stored on the goal
+ * but otherwise never read anywhere. Check the ones we have a model for
+ * (FTP/power) against this plan's projected fitness, using CTL growth as a
+ * rough proxy for FTP growth — not physiologically exact, but enough to flag
+ * a target that the plan's fitness build doesn't support. Anything else
+ * (e.g. a pace target) is surfaced as unchecked rather than silently dropped.
+ */
+function checkTargetMetric(goal, athlete, startCtl, achievableCtl) {
+  const metric = goal.target_metric ? String(goal.target_metric).trim().toLowerCase() : null;
+  const value = goal.target_value;
+  if (!metric || value == null) return null;
+
+  if (metric === 'ftp' || metric === 'power') {
+    if (!athlete.ftp) {
+      return {
+        type: 'target-unverified',
+        text: `Target ${metric} of ${value}W is set, but no current FTP is on file — add one in Settings so this can be checked against the plan.`,
+      };
+    }
+    const ctlGrowth = startCtl > 0 ? achievableCtl / startCtl : 1;
+    const projectedFtp = round(athlete.ftp * clamp(ctlGrowth, 0.9, 1.35), 0);
+    const gap = value - projectedFtp;
+    if (gap > 5) {
+      return {
+        type: 'target-gap',
+        text: `Target ${metric} is ${value}W. Current FTP is ${athlete.ftp}W; the fitness this plan builds (CTL ${round(startCtl, 0)} → ${achievableCtl}) projects to roughly ${projectedFtp}W by race week — ${round(gap, 0)}W short of target. FTP gains need dedicated threshold/VO2 work and time; check this again mid-plan against a real test, not this estimate.`,
+      };
+    }
+    return {
+      type: 'target-on-track',
+      text: `Target ${metric} of ${value}W looks reachable: current FTP ${athlete.ftp}W projects to roughly ${projectedFtp}W by race week given this plan's fitness build.`,
+    };
+  }
+
+  return {
+    type: 'target-unchecked',
+    text: `Target metric "${goal.target_metric}" (${value}) isn't one the planner checks automatically (supported: ftp/power) — it's stored on the goal for reference only.`,
   };
 }
 
