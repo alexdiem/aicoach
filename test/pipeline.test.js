@@ -22,6 +22,7 @@ const brief = await import('../server/brief.js');
 const backpain = await import('../server/backpain.js');
 const cycle = await import('../server/cycle.js');
 const { normaliseActivity, parseTags } = await import('../server/sync.js');
+const intervalsClient = await import('../server/intervals.js');
 
 process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
 
@@ -372,4 +373,43 @@ test('weekly run writes a brief and a new plan version', async () => {
   await brief.runWeekly({ goalId, asOf: TODAY });
   const count = await db.prepare('SELECT COUNT(*) c FROM briefs WHERE week_start = ?').get(weekStart(TODAY));
   assert.equal(count.c, 1);
+});
+
+test('intervals.icu client resolves the stored settings, not a stray Promise, when no key is passed explicitly', async () => {
+  // Regression: getSetting()/setSetting() became async in the Vercel/Turso
+  // migration, and server/intervals.js was missed — request() and
+  // getAthleteId() read the stored API key/athlete id without awaiting,
+  // so an unconfigured caller (the real "Sync" button, as opposed to
+  // "test connection" which always passes an explicit key) built URLs
+  // like /athlete/[object Promise]/activities and got a 401 from
+  // intervals.icu for a nonsense path rather than a real auth error.
+  await setSetting('intervals_api_key', 'fake-test-key');
+  await setSetting('intervals_athlete_id', '0'); // force getAthleteId to resolve it itself
+
+  const requestedUrls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    requestedUrls.push(u);
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => JSON.stringify(u.includes('/activities') ? [] : { id: 42, name: 'Test Athlete' }),
+    };
+  };
+  try {
+    const id = await intervalsClient.getAthleteId({});
+    assert.equal(id, '42');
+    await intervalsClient.fetchActivities({ oldest: TODAY, newest: TODAY });
+  } finally {
+    globalThis.fetch = realFetch;
+    await setSetting('intervals_athlete_id', '0');
+  }
+
+  assert.ok(requestedUrls.length >= 2, 'expected at least the athlete lookup and one activities call');
+  for (const url of requestedUrls) {
+    assert.ok(!url.includes('Promise'), `URL leaked an unresolved Promise: ${url}`);
+    assert.match(url, /\/athlete\/(0|42)(\/|$)/, `URL did not contain a real athlete id: ${url}`);
+  }
 });
