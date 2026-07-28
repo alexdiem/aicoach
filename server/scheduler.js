@@ -9,7 +9,7 @@
 //     a schedule, which calls runScheduledJobs() once per invocation — see
 //     api/cron.js.
 
-import { getSetting, setSetting } from './db.js';
+import { getSetting, setSetting, recordJobFailure, clearJobFailures } from './db.js';
 import { syncFromIntervals } from './sync.js';
 import { runWeekly } from './brief.js';
 import { activeGoal } from './planner.js';
@@ -25,10 +25,12 @@ async function maybeSync() {
   if (last && Date.now() - new Date(last).getTime() < hours * 3600 * 1000) return null;
   try {
     const r = await syncFromIntervals();
+    await clearJobFailures('sync');
     console.log(`[scheduler] synced ${r.activities} activities, ${r.wellness} wellness rows`);
     return r;
   } catch (e) {
     console.error('[scheduler] sync failed:', e.message);
+    await recordJobFailure('sync', e.message).catch(() => {});
     return null;
   }
 }
@@ -42,12 +44,14 @@ async function maybeWeekly() {
   try {
     const res = await runWeekly({ goalId: goal.id });
     await setSetting('last_weekly_run_week', ws);
+    await clearJobFailures('weekly');
     console.log(
       `[scheduler] weekly run for ${ws}: brief written${res.replanned ? `, plan v${res.replanned.version}` : ''}`
     );
     return res;
   } catch (e) {
     console.error('[scheduler] weekly run failed:', e.message);
+    await recordJobFailure('weekly', e.message).catch(() => {});
     return null;
   }
 }

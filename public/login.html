@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>aicoach — sign in</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🚵</text></svg>" />
+    <style>
+      /* Self-contained on purpose: this page must render without hitting any
+         authenticated route, so it doesn't depend on styles.css. */
+      :root { color-scheme: light dark; }
+      body {
+        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+        display: flex; align-items: center; justify-content: center;
+        min-height: 100vh; margin: 0;
+        background: light-dark(#f9f9f7, #0d0d0d);
+        color: light-dark(#0b0b0b, #fff);
+      }
+      form {
+        width: 100%; max-width: 320px; padding: 28px;
+        background: light-dark(#fcfcfb, #1a1a19);
+        border: 1px solid light-dark(rgba(11,11,11,.1), rgba(255,255,255,.1));
+        border-radius: 10px;
+      }
+      h1 { font-size: 18px; margin: 0 0 16px; }
+      label { display: block; font-size: 13px; margin-bottom: 6px; color: light-dark(#52514e, #c3c2b7); }
+      input {
+        width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 14px;
+        border-radius: 6px; border: 1px solid light-dark(rgba(11,11,11,.2), rgba(255,255,255,.2));
+        background: transparent; color: inherit;
+      }
+      button {
+        margin-top: 14px; width: 100%; padding: 9px; font-size: 14px; font-weight: 600;
+        border-radius: 6px; border: none; cursor: pointer;
+        background: #2a78d6; color: #fff;
+      }
+      button:disabled { opacity: .6; cursor: default; }
+      .error { color: #d03b3b; font-size: 13px; margin-top: 10px; min-height: 1em; }
+    </style>
+  </head>
+  <body>
+    <form id="login-form">
+      <h1>aicoach</h1>
+      <label for="password">Password</label>
+      <input id="password" type="password" name="password" autocomplete="current-password" autofocus required />
+      <button type="submit">Sign in</button>
+      <div class="error" id="error"></div>
+    </form>
+    <script>
+      const form = document.getElementById('login-form');
+      const errorEl = document.getElementById('error');
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = form.querySelector('button');
+        btn.disabled = true;
+        errorEl.textContent = '';
+        try {
+          const res = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: document.getElementById('password').value }),
+          });
+          const data = await res.json().catch(() => null);
+          if (!res.ok) throw new Error(data?.error || 'sign in failed');
+          const params = new URLSearchParams(location.search);
+          location.href = params.get('next') || '/';
+        } catch (err) {
+          errorEl.textContent = err.message;
+          btn.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

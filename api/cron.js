@@ -11,6 +11,7 @@
 
 import { runScheduledJobs } from '../server/scheduler.js';
 import { sendJson } from '../server/requestHandler.js';
+import { recordJobFailure } from '../server/db.js';
 
 export const config = { runtime: 'nodejs' };
 
@@ -29,6 +30,7 @@ export default async function handler(req, res) {
     sendJson(res, 200, { ok: true, ...result });
   } catch (e) {
     console.error('[cron] failed:', e.message);
+    await recordJobFailure('cron', e.message).catch(() => {});
     sendJson(res, 500, { ok: false, error: e.message });
   }
 }

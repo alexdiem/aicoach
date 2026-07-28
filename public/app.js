@@ -11,6 +11,10 @@ async function api(path, opts = {}) {
     headers: opts.body ? { 'Content-Type': 'application/json' } : undefined,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
+  if (res.status === 401) {
+    location.href = '/login.html?next=' + encodeURIComponent(location.pathname + location.search);
+    throw new Error('unauthorized');
+  }
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(data?.error || `${res.status} ${res.statusText}`);
   return data;
@@ -293,6 +297,7 @@ views['/brief'] = async () => {
   const [status, brief] = await Promise.all([api('/api/status'), api('/api/brief')]);
   const root = el('div');
 
+  if (status.jobFailures?.length) root.append(jobFailuresBanner(status.jobFailures));
   if (!status.hasApiKey) root.append(setupNotice());
   if (!status.goal) {
     root.append(
@@ -436,6 +441,23 @@ function explainPlan(plan, params) {
     s += ` The runway you've given this is enough to reach the fitness this event calls for — CTL ${fmt(params.targets?.achievableCtl, 0)} against a target of ${fmt(params.targets?.targetCtl, 0)}.`;
   }
   return s;
+}
+
+const JOB_LABELS = { sync: 'Background sync', weekly: 'Weekly replan/brief', cron: 'Scheduled job' };
+
+function jobFailuresBanner(failures) {
+  if (!failures?.length) return null;
+  return el(
+    'div',
+    {},
+    failures.map((f) =>
+      el(
+        'div.notice.error',
+        {},
+        `${JOB_LABELS[f.job] || f.job} failed at ${(f.occurred_at || '').slice(0, 16).replace('T', ' ')}: ${f.message || 'unknown error'}`
+      )
+    )
+  );
 }
 
 function setupNotice() {
@@ -940,6 +962,7 @@ views['/settings'] = async () => {
   const status = await api('/api/status');
   const s = status.settings;
   const root = el('div');
+  if (status.jobFailures?.length) root.append(jobFailuresBanner(status.jobFailures));
 
   const key = el('input', { type: 'password', placeholder: status.hasApiKey ? '•••••••• (stored)' : 'paste API key', style: 'width:100%' });
   const athleteId = el('input', { type: 'text', value: s.intervals_athlete_id || '0', style: 'width:120px' });
@@ -1085,6 +1108,64 @@ views['/settings'] = async () => {
             )
           )
         )
+      )
+    )
+  );
+
+  const exportOut = el('span.muted', {});
+  root.append(
+    el(
+      'div.card',
+      {},
+      el('h3', {}, 'Data export'),
+      el('p.muted', {}, 'The database (Turso) has no separate backup — download a full JSON snapshot of your data periodically.'),
+      el(
+        'div',
+        {},
+        el('button', {
+          onclick: async (e) => {
+            e.target.disabled = true;
+            exportOut.textContent = 'Preparing…';
+            try {
+              const res = await fetch('/api/export');
+              if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `aicoach-export-${todayStr()}.json`;
+              document.body.append(a);
+              a.click();
+              a.remove();
+              URL.revokeObjectURL(url);
+              exportOut.textContent = '✓ downloaded';
+            } catch (err) {
+              exportOut.textContent = `✗ ${err.message}`;
+            } finally {
+              e.target.disabled = false;
+            }
+          },
+        }, 'Download export (JSON)'),
+        ' ',
+        exportOut
+      )
+    )
+  );
+
+  root.append(
+    el(
+      'div.card',
+      {},
+      el('h3', {}, 'Session'),
+      el(
+        'button',
+        {
+          onclick: async () => {
+            await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+            location.href = '/login.html';
+          },
+        },
+        'Sign out'
       )
     )
   );

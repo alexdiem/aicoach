@@ -1,7 +1,7 @@
 // JSON API. Route table is a flat map of "METHOD /path" → handler.
 // Path segments starting with ":" are captured into `params`.
 
-import { db, allSettings, setSetting, getAthlete, upsertAthlete, getSetting } from './db.js';
+import { db, allSettings, setSetting, getAthlete, upsertAthlete, getSetting, activeJobFailures } from './db.js';
 import { addDays, isoDate, round, today, weekStart } from './util.js';
 import { syncFromIntervals, lastSync } from './sync.js';
 import { testConnection } from './intervals.js';
@@ -16,6 +16,7 @@ import {
 import { buildBrief, saveBrief, getBrief, listBriefs, runWeekly } from './brief.js';
 import { painCorrelation, upsertRideLog, loggedRides, recentPain } from './backpain.js';
 import { cycleSummary, hasCycleData, phaseFor, phaseForWeek } from './cycle.js';
+import { authEnabled, checkPassword, createSessionCookie, clearSessionCookie } from './auth.js';
 
 const MASK = '••••••••';
 
@@ -30,9 +31,22 @@ async function requireGoal(query) {
 }
 
 export const routes = {
+  // --- auth ------------------------------------------------------------------
+  'POST /api/login': async ({ body, res }) => {
+    if (!authEnabled()) return { ok: true };
+    if (!checkPassword(body?.password)) throw httpError(401, 'incorrect password');
+    res.setHeader('Set-Cookie', createSessionCookie());
+    return { ok: true };
+  },
+
+  'POST /api/logout': async ({ res }) => {
+    res.setHeader('Set-Cookie', clearSessionCookie());
+    return { ok: true };
+  },
+
   'GET /api/status': async () => {
     const goal = await activeGoal();
-    const [plan, fit, settings, hasApiKey, athlete, sync, cycleDataPresent, actCount, rideCount, briefCount] = await Promise.all([
+    const [plan, fit, settings, hasApiKey, athlete, sync, cycleDataPresent, actCount, rideCount, briefCount, jobFailures] = await Promise.all([
       goal ? activePlan(goal.id) : null,
       currentFitness(),
       maskedSettings(),
@@ -43,6 +57,7 @@ export const routes = {
       db.prepare('SELECT COUNT(*) c FROM activities').get(),
       db.prepare('SELECT COUNT(*) c FROM ride_logs').get(),
       db.prepare('SELECT COUNT(*) c FROM briefs').get(),
+      activeJobFailures(),
     ]);
     const ramp = await rampRate();
     return {
@@ -50,6 +65,7 @@ export const routes = {
       hasApiKey: !!hasApiKey,
       athlete,
       lastSync: sync,
+      jobFailures,
       goal,
       plan: plan ? { ...plan, notes: safeJson(plan.notes_json), params: safeJson(plan.params_json) } : null,
       fitness: { ...fit, ramp },
@@ -83,6 +99,38 @@ export const routes = {
   },
 
   'GET /api/sync/history': async () => db.prepare('SELECT * FROM sync_runs ORDER BY id DESC LIMIT 20').all(),
+
+  // --- data export (Turso is the only copy of this data; this is the backup path) --
+  'GET /api/export': async () => {
+    const [goals, plans, planWeeksRows, activities, wellness, rideLogs, dailyLogs, briefs, syncRuns, athlete, settings] =
+      await Promise.all([
+        db.prepare('SELECT * FROM goals').all(),
+        db.prepare('SELECT * FROM plans').all(),
+        db.prepare('SELECT * FROM plan_weeks').all(),
+        db.prepare('SELECT * FROM activities').all(),
+        db.prepare('SELECT * FROM wellness').all(),
+        db.prepare('SELECT * FROM ride_logs').all(),
+        db.prepare('SELECT * FROM daily_logs').all(),
+        db.prepare('SELECT * FROM briefs').all(),
+        db.prepare('SELECT * FROM sync_runs').all(),
+        getAthlete(),
+        maskedSettings(),
+      ]);
+    return {
+      exportedAt: new Date().toISOString(),
+      athlete,
+      settings,
+      goals,
+      plans,
+      plan_weeks: planWeeksRows,
+      activities,
+      wellness,
+      ride_logs: rideLogs,
+      daily_logs: dailyLogs,
+      briefs,
+      sync_runs: syncRuns,
+    };
+  },
 
   // --- goals ---------------------------------------------------------------
   'GET /api/goals': async () => db.prepare('SELECT * FROM goals ORDER BY event_date').all(),
