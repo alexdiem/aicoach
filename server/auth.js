@@ -4,35 +4,47 @@
 // with the URL out", not multi-tenant identity.
 //
 // Session is a signed, stateless cookie (HMAC-SHA256 over an expiry, keyed by
-// the password itself) rather than a server-side session store: Vercel's
-// serverless functions don't share memory or persist between invocations, so
-// an in-memory session table would silently stop working there. A bearer
-// token (`Authorization: Bearer <password>`) is also accepted, for scripted
-// access (e.g. `curl`).
+// SESSION_SECRET — a separate value from the password itself) rather than a
+// server-side session store: Vercel's serverless functions don't share memory
+// or persist between invocations, so an in-memory session table would
+// silently stop working there. Keeping the signing key separate from
+// APP_PASSWORD means the cookie never embeds the password, and rotating
+// SESSION_SECRET alone invalidates every outstanding session without forcing
+// a password change. A bearer token (`Authorization: Bearer <password>`) is
+// also accepted, for scripted access (e.g. `curl`).
 //
-// Auth is only enforced when AICOACH_PASSWORD is set — matching the existing
-// CRON_SECRET convention in api/cron.js: unset means "not configured yet",
-// not "locked out".
+// Auth is only enforced when both APP_PASSWORD and SESSION_SECRET are set —
+// matching the existing CRON_SECRET convention in api/cron.js: unset means
+// "not configured yet", not "locked out". `node scripts/generate-password.js`
+// generates both.
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 const COOKIE_NAME = 'aicoach_session';
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
-function secret() {
-  return process.env.AICOACH_PASSWORD || null;
-}
+let warnedMissingSecret = false;
 
 export function authEnabled() {
-  return !!secret();
+  const password = process.env.APP_PASSWORD;
+  const sessionSecret = process.env.SESSION_SECRET;
+  if (!password) return false;
+  if (!sessionSecret) {
+    if (!warnedMissingSecret) {
+      console.error('[auth] APP_PASSWORD is set but SESSION_SECRET is not — auth stays disabled until both are set.');
+      warnedMissingSecret = true;
+    }
+    return false;
+  }
+  return true;
 }
 
 function sign(payload) {
-  return createHmac('sha256', secret()).update(payload).digest('hex');
+  return createHmac('sha256', process.env.SESSION_SECRET).update(payload).digest('hex');
 }
 
 export function checkPassword(candidate) {
-  const s = secret();
+  const s = process.env.APP_PASSWORD;
   if (!s || !candidate) return false;
   const a = Buffer.from(String(candidate));
   const b = Buffer.from(s);
@@ -84,7 +96,7 @@ function validSessionToken(token) {
 }
 
 /** True if the request carries a valid session cookie or bearer token. Always
- * true when AICOACH_PASSWORD isn't set (auth disabled). */
+ * true when auth isn't configured (APP_PASSWORD/SESSION_SECRET unset). */
 export function isAuthenticated(req) {
   if (!authEnabled()) return true;
   const authHeader = req.headers['authorization'];

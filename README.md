@@ -43,6 +43,11 @@ node tools/demo-seed.js                     # writes data/demo.db, prints a brie
 AICOACH_DB=data/demo.db npm start
 ```
 
+Local dev runs with no password by default. To put the same gate the deployed
+version uses in front of it too, copy `.env.example` to `.env`, fill in
+`APP_PASSWORD`/`SESSION_SECRET` (`node scripts/generate-password.js` generates
+both), and `npm start` picks it up automatically.
+
 ## Where your data lives
 
 Locally: a single SQLite file, `data/aicoach.db` (override with `AICOACH_DB`). The API
@@ -93,7 +98,24 @@ correlation, the frontend — is the identical code running in both places.
    | `TURSO_DATABASE_URL` | from step 1 | yes — without it the app has nowhere to persist data |
    | `TURSO_AUTH_TOKEN` | from step 1 | yes |
    | `CRON_SECRET` | any random string | recommended — without it `/api/cron` is unauthenticated (harmless, but locking it down is one field) |
-   | `AICOACH_PASSWORD` | a password you choose | strongly recommended — without it the deployed app (and everything in it: cycle data, back pain logs, your intervals.icu key) is reachable by anyone with the URL. Once set, the app shell and every `/api/*` route require this password, via a session cookie or `Authorization: Bearer <password>` |
+   | `APP_PASSWORD` | a password you choose | strongly recommended — without it (and `SESSION_SECRET`) the deployed app is reachable by anyone with the URL, including your cycle data, back pain logs, and intervals.icu key |
+   | `SESSION_SECRET` | a random key | required alongside `APP_PASSWORD` — signs the session cookie; never the password itself |
+
+   Generate both with:
+   ```bash
+   node scripts/generate-password.js
+   ```
+   This prints a fresh `APP_PASSWORD=...` (three random words + a number) and
+   `SESSION_SECRET=...` line — paste both into Vercel's env vars (and your
+   local `.env` if you want the password gate locally too). Neither is
+   committed to git. Run the script again any time you want to rotate: a new
+   `APP_PASSWORD` changes what you type in, a new `SESSION_SECRET` immediately
+   invalidates all previously issued session cookies without touching the
+   password.
+
+   Once both are set, the app shell and every `/api/*` route require this
+   password — via a session cookie (issued at `/login.html`) or
+   `Authorization: Bearer <password>` for scripted access.
 
 4. **Redeploy** after setting the env vars (Vercel doesn't hot-reload environment
    changes into a running deployment). Then open the deployed URL and go to **Settings**
