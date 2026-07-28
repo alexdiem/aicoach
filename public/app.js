@@ -413,6 +413,31 @@ function tile(label, value, sub, cls = '') {
   return el(`div.tile${cls ? '.' + cls : ''}`, {}, el('div.label', {}, label), el('div.value', {}, value), sub ? el('div.sub', {}, sub) : null);
 }
 
+/** The coach's explanation of the whole arc — why the plan is shaped this way, not just what the numbers are. */
+function explainPlan(plan, params) {
+  const counts = {};
+  for (const w of plan.weeks) counts[w.phase] = (counts[w.phase] || 0) + 1;
+  const baseWeeks = (counts.prep || 0) + (counts.base1 || 0) + (counts.base2 || 0) + (counts.base3 || 0);
+  const buildWeeks = (counts.build1 || 0) + (counts.build2 || 0) + (counts.peak || 0);
+  const taperWeeks = counts.taper || 0;
+  const cls = params.demand.class;
+  const clsLabel = { sprint: 'a short, high-intensity', middle: 'a middle-distance', long: 'a long', ultra: 'an ultra-distance' }[cls] || 'this';
+
+  let s = `This is built around ${clsLabel} event: roughly ${fmt(params.demand.hours, 1)}h and ${fmt(params.demand.eventTss, 0)} TSS on the day. `;
+  s += `${baseWeeks} weeks of base come first — that's where the aerobic engine actually gets built, before anything specific to the event is layered on. `;
+  s += `Then ${buildWeeks} weeks of build and peak, where the work gets progressively more event-specific`;
+  s += (cls === 'ultra' || cls === 'long') ? ' — for an event this long, "specific" mostly means duration and back-to-back days, not more intervals. ' : '. ';
+  s += `${taperWeeks} week${taperWeeks === 1 ? '' : 's'} of taper bring${taperWeeks === 1 ? 's' : ''} you to the start line rested without losing sharpness.`;
+
+  const gapPct = params.targets?.targetCtl ? ((params.targets.targetCtl - params.targets.achievableCtl) / params.targets.targetCtl) * 100 : 0;
+  if (gapPct > 8) {
+    s += ` One honest caveat: the event profile really justifies a peak fitness (CTL) around ${fmt(params.targets.targetCtl, 0)}, and from where you're starting this plan only gets you to about ${fmt(params.targets.achievableCtl, 0)} in the time available — worth knowing now rather than on race day, and the notes below spell out the tradeoff.`;
+  } else {
+    s += ` The runway you've given this is enough to reach the fitness this event calls for — CTL ${fmt(params.targets?.achievableCtl, 0)} against a target of ${fmt(params.targets?.targetCtl, 0)}.`;
+  }
+  return s;
+}
+
 function setupNotice() {
   return el(
     'div.notice',
@@ -455,6 +480,7 @@ views['/plan'] = async () => {
             tile('Longest session', `${fmt(params.targets?.peakLongHours, 1)} h`, `class: ${params.demand.class}`)
           )
         : null,
+      params.demand ? el('p', { style: 'margin-top:12px' }, explainPlan(plan, params)) : null,
       (p?.notes || []).map((n) => el('div.notice', {}, n.text))
     )
   );
