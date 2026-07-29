@@ -618,7 +618,7 @@ views['/log'] = async () => {
     el(
       'thead',
       {},
-      el('tr', {}, ['Date', 'Activity', 'IF', 'VI', 'TSS', 'h', 'Position', 'Back pain', 'RPE', 'Notes', ''].map((h) => el('th', {}, h)))
+      el('tr', {}, ['Date', 'Activity', 'IF', 'VI', 'TSS', 'h', 'Position', 'Back pain', 'RPE', 'Notes', '', ''].map((h) => el('th', {}, h)))
     )
   );
   const tb = el('tbody');
@@ -659,6 +659,28 @@ views['/log'] = async () => {
       },
     }, 'Save');
 
+    const debriefCell = el('td', { colspan: 12 }, el('span.muted', {}, 'Loading…'));
+    const debriefRow = el('tr', { style: 'display:none' }, debriefCell);
+    let debriefLoaded = false;
+    const debriefBtn = el('button.ghost', {
+      onclick: async (e) => {
+        const showing = debriefRow.style.display !== 'none';
+        if (showing) {
+          debriefRow.style.display = 'none';
+          return;
+        }
+        debriefRow.style.display = '';
+        if (debriefLoaded) return;
+        debriefLoaded = true;
+        try {
+          const d = await api(`/api/activities/${encodeURIComponent(a.id)}/debrief`);
+          debriefCell.replaceChildren(el('div.brief', { html: markdown(d.body) }));
+        } catch (err) {
+          debriefCell.replaceChildren(el('span.muted', {}, err.message));
+        }
+      },
+    }, 'Debrief');
+
     tb.append(
       el(
         'tr',
@@ -673,8 +695,10 @@ views['/log'] = async () => {
         el('td', {}, painSel),
         el('td', {}, rpe),
         el('td', {}, notes),
-        el('td', {}, save)
-      )
+        el('td', {}, save),
+        el('td', {}, debriefBtn)
+      ),
+      debriefRow
     );
   }
   table.append(tb);

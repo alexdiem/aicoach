@@ -14,6 +14,7 @@ import {
   durationClass, adaptationInputs,
 } from './planner.js';
 import { buildBrief, saveBrief, getBrief, listBriefs, runWeekly } from './brief.js';
+import { buildWorkoutDebrief } from './debrief.js';
 import { painCorrelation, upsertRideLog, loggedRides, recentPain } from './backpain.js';
 import { authEnabled, checkPassword, createSessionCookie, clearSessionCookie } from './auth.js';
 
@@ -266,6 +267,12 @@ export const routes = {
       acts.map(async (a) => ({ ...a, log: logs.get(a.id) || (await db.prepare('SELECT * FROM ride_logs WHERE activity_id = ?').get(a.id)) || null }))
     );
     return withLogs.reverse();
+  },
+
+  'GET /api/activities/:id/debrief': async ({ params }) => {
+    const debrief = await buildWorkoutDebrief(params.id);
+    if (!debrief) throw httpError(404, 'activity not found');
+    return debrief;
   },
 
   'POST /api/ride-logs': async ({ body }) => {
