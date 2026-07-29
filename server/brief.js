@@ -12,13 +12,8 @@ import {
 } from './metrics.js';
 import { activePlan, weekForDate, activeGoal, adaptationInputs, regenerate, tssPerHour } from './planner.js';
 import { painFlag, recentPain } from './backpain.js';
-import { hasCycleData, phaseForWeek, simsAdjustment } from './cycle.js';
 
 const SEV_ORDER = { critical: 0, warn: 1, info: 2, good: 3 };
-
-async function isCycleOn() {
-  return (await getSetting('sims_enabled', '1')) === '1' && (await hasCycleData());
-}
 
 export async function buildBrief({ goalId = null, asOf = today() } = {}) {
   const goal = goalId ? await db.prepare('SELECT * FROM goals WHERE id = ?').get(goalId) : await activeGoal();
@@ -28,7 +23,7 @@ export async function buildBrief({ goalId = null, asOf = today() } = {}) {
   // Everything in this batch is independent of everything else in it — fired
   // together rather than awaited one at a time, since a networked DB's round
   // trip (not local disk I/O) is the dominant cost here once deployed.
-  const [plan, fit, ramp, ef, vi, wbal, weeks8, fuel, painEvents, athlete, lastActual, cycleOn] = await Promise.all([
+  const [plan, fit, ramp, ef, vi, wbal, weeks8, fuel, painEvents, athlete, lastActual] = await Promise.all([
     goal ? activePlan(goal.id) : null,
     currentFitness(asOf),
     rampRate(asOf),
@@ -40,17 +35,14 @@ export async function buildBrief({ goalId = null, asOf = today() } = {}) {
     recentPain({ asOf, days: 28 }),
     getAthlete(),
     weekActuals(lastWs),
-    isCycleOn(),
   ]);
 
-  const [thisWeek, lastPlanWeek, cycleWeek, pain] = await Promise.all([
+  const [thisWeek, lastPlanWeek, pain] = await Promise.all([
     plan ? weekForDate(plan.id, ws) : null,
     plan ? weekForDate(plan.id, lastWs) : null,
-    cycleOn ? phaseForWeek(ws) : null,
     painFlag({ asOf }),
   ]);
   const comparison = lastPlanWeek ? compareWeek(lastPlanWeek, lastActual) : null;
-  const cycleAdj = cycleWeek?.phase ? simsAdjustment(cycleWeek.phase) : null;
 
   const flags = [];
   const actions = [];
@@ -174,28 +166,8 @@ export async function buildBrief({ goalId = null, asOf = today() } = {}) {
     });
   }
 
-  // ----------------------------------------------- Sims: cycle phase (opt-in)
-  if (cycleAdj && thisWeek) {
-    const notes = cycleAdj.notes.join(' ');
-    flags.push({
-      id: 'cycle',
-      severity: 'info',
-      title: `Cycle phase: ${cycleWeek.phase.replace('_', ' ')} (${cycleWeek.confidence})`,
-      text: `${notes} Plan for this week already reflects it: ${thisWeek.target_tss} TSS with ${thisWeek.z5_pct}% Z5 time.`,
-      numbers: { phase: cycleWeek.phase, tssMultiplier: cycleAdj.tssMultiplier },
-      framework: 'Sims',
-    });
-    for (const f of cycleAdj.fuelling) actions.push(`Fuelling (Sims, ${cycleWeek.phase.replace('_', ' ')}): ${f}`);
-    governing.push({
-      decision: 'intensity placement this week',
-      framework: 'Sims',
-      reason: `${cycleWeek.phase.replace('_', ' ')} phase, ${cycleWeek.daysInPhase}/7 days. Load multiplier ${cycleAdj.tssMultiplier} applied.`,
-      alternative: 'Friel would set this week from block position alone.',
-    });
-  }
-
   // ------------------------------------------ Sims: fuelling / RED-S screening
-  const redsFlag = redsScreen(fuel, fit, weeks8, cycleOn);
+  const redsFlag = redsScreen(fuel, fit, weeks8);
   if (redsFlag) {
     flags.push(redsFlag);
     if (redsFlag.action) actions.push(redsFlag.action);
@@ -264,7 +236,6 @@ export async function buildBrief({ goalId = null, asOf = today() } = {}) {
     ef: { recent: ef.recentMean, baseline: ef.baselineMean, changePct: ef.changePct, reliable: ef.reliable },
     daysToEvent: goal ? daysBetween(asOf, goal.event_date) : null,
     lastWeek: comparison,
-    cyclePhase: cycleWeek?.phase || null,
   };
 
   const body = renderMarkdown({ goal, thisWeek: week, ws, directive, flags, actions, governing, metrics, comparison, adjustment });
@@ -318,7 +289,13 @@ function decideAdjustment({ thisWeek, fit, tsb, ef, ramp, rampCap, underRecovery
       reason: `EF ${signed(ef.changePct)}% at matched IF (${ef.recentIfMean} vs ${ef.baselineIfMean}) with ATL ${fit.atl}.`,
     };
   }
-  if (tsb != null && tsb <= -20) {
+  // A load week (not yet at its scheduled recovery week) sitting around -20 is
+  // the block working as intended, not a signal to intervene — the block's own
+  // recovery week is what's supposed to bring TSB back up. Only fire this once
+  // that safety net isn't in play (taper, or a recovery week that hasn't
+  // resolved it).
+  const isScheduledLoadWeek = thisWeek.phase !== 'taper' && !thisWeek.is_recovery;
+  if (tsb != null && tsb <= -20 && !isScheduledLoadWeek) {
     return {
       id: 'tsb-low',
       severity: 'warn',
@@ -508,7 +485,7 @@ function buildDirective({ adjustment, week, thisWeek, fit, tsb, ramp, rampCap, c
   };
 }
 
-function redsScreen(fuel, fit, weeks8, cycleOn) {
+function redsScreen(fuel, fit, weeks8) {
   // Only fires on numbers. Needs a rising load AND at least one physiological
   // marker moving the wrong way; otherwise it stays quiet.
   const loadEarly = weeks8.slice(0, 4).reduce((s, w) => s + (w.tss || 0), 0) / 4;

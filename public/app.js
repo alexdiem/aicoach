@@ -529,7 +529,7 @@ views['/plan'] = async () => {
   for (const w of plan.weeks) {
     const isNow = cur && w.start_date === cur.start_date;
     const tr = el(`tr${w.is_recovery ? '.recovery' : ''}${isNow ? '.now' : ''}`, {});
-    tr.append(el('td', {}, el('div', {}, w.start_date), w.cycle?.phase ? el('span.pill', {}, w.cycle.phase.replace('_', ' ')) : null));
+    tr.append(el('td', {}, el('div', {}, w.start_date)));
     tr.append(el('td', {}, el('span.phase', {}, w.phase + (w.is_recovery ? ' · rec' : ''))));
     tr.append(el('td.num', {}, fmt(w.target_tss)));
     tr.append(
@@ -680,15 +680,8 @@ views['/log'] = async () => {
   table.append(tb);
   root.append(el('div.card', {}, el('div.chart-wrap', {}, table)));
 
-  // Optional Sims inputs — explicitly opt-in.
-  const cycle = await api('/api/cycle');
+  // Optional intake logging — feeds the low-energy-availability screen.
   const dateInput = el('input', { type: 'date', value: todayStr() });
-  const phaseSel = el(
-    'select',
-    {},
-    ['', 'menstrual', 'follicular', 'ovulation', 'luteal_early', 'luteal_late'].map((v) => el('option', { value: v }, v || '—'))
-  );
-  const periodChk = el('input', { type: 'checkbox' });
   const kcal = el('input', { type: 'number', style: 'width:100px' });
   const prot = el('input', { type: 'number', style: 'width:100px' });
   root.append(
@@ -696,20 +689,11 @@ views['/log'] = async () => {
       'div.card',
       {},
       el('h3', {}, 'Optional daily log'),
-      el(
-        'p.muted',
-        {},
-        'Entirely optional. The plan works without any of it. Logging period start dates switches on the Sims cycle-phase adjustments; logging intake switches on the low-energy-availability screen.',
-        cycle.enabled
-          ? el('div', { style: 'margin-top:6px' }, `Current model: ${cycle.model.lengthDays ?? '?'}-day cycle from ${cycle.model.n} logged start${cycle.model.n === 1 ? '' : 's'}; today reads as ${cycle.current.phase || 'unknown'} (${cycle.current.source}).`)
-          : null
-      ),
+      el('p.muted', {}, 'Entirely optional. The plan works without any of it. Logging intake switches on the low-energy-availability screen.'),
       el(
         'div.row',
         {},
         el('div', {}, el('label', {}, 'Date'), dateInput),
-        el('div', {}, el('label', {}, 'Cycle phase'), phaseSel),
-        el('div', {}, el('label', {}, 'Period day 1'), periodChk),
         el('div', {}, el('label', {}, 'Intake (kcal)'), kcal),
         el('div', {}, el('label', {}, 'Protein (g)'), prot),
         el(
@@ -721,8 +705,6 @@ views['/log'] = async () => {
                 method: 'POST',
                 body: {
                   date: dateInput.value,
-                  cycle_phase: phaseSel.value || null,
-                  period_start: periodChk.checked,
                   intake_kcal: kcal.value || null,
                   protein_g: prot.value || null,
                 },
@@ -1034,7 +1016,6 @@ views['/settings'] = async () => {
   );
 
   const opts = {
-    sims_enabled: el('select', {}, [el('option', { value: '1' }, 'on'), el('option', { value: '0' }, 'off')]),
     load_pattern: el('select', {}, [el('option', { value: '3:1' }, '3:1 (3 load + 1 recovery)'), el('option', { value: '2:1' }, '2:1 (2 load + 1 recovery)')]),
     max_ramp_base: el('input', { type: 'number', step: '0.5', value: s.max_ramp_base }),
     max_ramp_build: el('input', { type: 'number', step: '0.5', value: s.max_ramp_build }),
@@ -1044,7 +1025,6 @@ views['/settings'] = async () => {
     sync_days_back: el('input', { type: 'number', step: '10', value: s.sync_days_back }),
     auto_replan_enabled: el('select', {}, [el('option', { value: '1' }, 'on'), el('option', { value: '0' }, 'off')]),
   };
-  opts.sims_enabled.value = s.sims_enabled;
   opts.load_pattern.value = s.load_pattern;
   opts.auto_replan_enabled.value = s.auto_replan_enabled;
 
@@ -1053,11 +1033,9 @@ views['/settings'] = async () => {
       'div.card',
       {},
       el('h3', {}, 'Planning'),
-      el('p.muted', {}, 'Sims adjustments only activate when you supply cycle or intake data — turning them "on" here does not require you to log anything.'),
       el(
         'div.row',
         {},
-        el('div', {}, el('label', {}, 'Sims adjustments'), opts.sims_enabled),
         el('div', {}, el('label', {}, 'Loading pattern'), opts.load_pattern),
         el('div', {}, el('label', {}, 'Max ramp, base (CTL/wk)'), opts.max_ramp_base),
         el('div', {}, el('label', {}, 'Max ramp, build'), opts.max_ramp_build),
