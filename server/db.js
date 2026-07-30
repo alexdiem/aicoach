@@ -172,8 +172,6 @@ CREATE TABLE IF NOT EXISTS wellness (
   sleep_score       REAL,
   weight            REAL,
   kcal_consumed     REAL,
-  menstrual_phase   TEXT,
-  menstrual_predicted TEXT,
   soreness          REAL,
   fatigue           REAL,
   stress            REAL,
@@ -195,7 +193,6 @@ CREATE TABLE IF NOT EXISTS ride_logs (
   back_pain     TEXT,
   pain_onset    TEXT,
   rpe           INTEGER,
-  cycle_phase   TEXT,
   carb_g_per_h  REAL,
   protein_g     REAL,
   notes         TEXT,
@@ -208,9 +205,6 @@ CREATE INDEX IF NOT EXISTS idx_ride_logs_date ON ride_logs(date);
 -- Optional daily log. Everything here is opt-in; the plan works without it.
 CREATE TABLE IF NOT EXISTS daily_logs (
   date          TEXT PRIMARY KEY,
-  cycle_phase   TEXT,
-  cycle_day     INTEGER,
-  period_start  INTEGER DEFAULT 0,
   intake_kcal   REAL,
   protein_g     REAL,
   back_pain     TEXT,
@@ -281,6 +275,18 @@ async function migrate(d) {
   await ensureColumn(d, 'activities', 'decoupling', 'REAL');
   await ensureColumn(d, 'plan_weeks', 'governing_json', 'TEXT');
 
+  // Cycle-phase periodization (server/cycle.js) was removed — it modelled a
+  // natural hormonal cycle that doesn't apply on hormonal contraception, so
+  // its inputs stopped being read anywhere. Drop the now-dead columns rather
+  // than leave them silently unused; re-adding them is one migration away if
+  // that ever changes.
+  await dropColumnIfExists(d, 'wellness', 'menstrual_phase');
+  await dropColumnIfExists(d, 'wellness', 'menstrual_predicted');
+  await dropColumnIfExists(d, 'ride_logs', 'cycle_phase');
+  await dropColumnIfExists(d, 'daily_logs', 'cycle_phase');
+  await dropColumnIfExists(d, 'daily_logs', 'cycle_day');
+  await dropColumnIfExists(d, 'daily_logs', 'period_start');
+
   // Early builds keyed briefs on (week_start, plan_id), which forked a week's
   // brief on every replan. Collapse to one row per week, keeping the newest.
   const row = await d.get("SELECT sql FROM sqlite_master WHERE type='table' AND name='briefs'");
@@ -313,6 +319,13 @@ async function ensureColumn(d, table, column, decl) {
   const cols = await d.all(`PRAGMA table_info(${table})`);
   if (!cols.some((c) => c.name === column)) {
     await d.execRaw(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+  }
+}
+
+async function dropColumnIfExists(d, table, column) {
+  const cols = await d.all(`PRAGMA table_info(${table})`);
+  if (cols.some((c) => c.name === column)) {
+    await d.execRaw(`ALTER TABLE ${table} DROP COLUMN ${column}`);
   }
 }
 

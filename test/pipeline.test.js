@@ -374,7 +374,6 @@ test('plan and brief work fine with no daily-log data at all', async () => {
   assert.ok(r.weeks.every((w) => w.target_tss > 0 && w.target_hours > 0));
   const b = await brief.buildBrief({ goalId, asOf: TODAY });
   assert.ok(b.headline.length > 0);
-  assert.ok(!b.flags.some((f) => f.id === 'cycle'));
 });
 
 test('base-phase key sessions vary week to week rather than repeating verbatim', async () => {

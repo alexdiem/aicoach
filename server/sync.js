@@ -105,18 +105,17 @@ ON CONFLICT(id) DO UPDATE SET
 const UPSERT_WELLNESS = `
 INSERT INTO wellness (
   date, ctl, atl, ramp_rate, resting_hr, hrv, sleep_secs, sleep_score, weight, kcal_consumed,
-  menstrual_phase, menstrual_predicted, soreness, fatigue, stress, mood, motivation, injury,
+  soreness, fatigue, stress, mood, motivation, injury,
   readiness, comments, raw_json
 ) VALUES (
   @date, @ctl, @atl, @ramp_rate, @resting_hr, @hrv, @sleep_secs, @sleep_score, @weight, @kcal_consumed,
-  @menstrual_phase, @menstrual_predicted, @soreness, @fatigue, @stress, @mood, @motivation, @injury,
+  @soreness, @fatigue, @stress, @mood, @motivation, @injury,
   @readiness, @comments, @raw_json
 )
 ON CONFLICT(date) DO UPDATE SET
   ctl=excluded.ctl, atl=excluded.atl, ramp_rate=excluded.ramp_rate, resting_hr=excluded.resting_hr,
   hrv=excluded.hrv, sleep_secs=excluded.sleep_secs, sleep_score=excluded.sleep_score,
-  weight=excluded.weight, kcal_consumed=excluded.kcal_consumed, menstrual_phase=excluded.menstrual_phase,
-  menstrual_predicted=excluded.menstrual_predicted, soreness=excluded.soreness, fatigue=excluded.fatigue,
+  weight=excluded.weight, kcal_consumed=excluded.kcal_consumed, soreness=excluded.soreness, fatigue=excluded.fatigue,
   stress=excluded.stress, mood=excluded.mood, motivation=excluded.motivation, injury=excluded.injury,
   readiness=excluded.readiness, comments=excluded.comments, raw_json=excluded.raw_json`;
 
@@ -132,8 +131,6 @@ export function normaliseWellness(w) {
     sleep_score: num(w.sleepScore),
     weight: num(w.weight),
     kcal_consumed: num(w.kcalConsumed),
-    menstrual_phase: w.menstrualPhase || null,
-    menstrual_predicted: w.menstrualPhasePredicted || null,
     soreness: num(w.soreness),
     fatigue: num(w.fatigue),
     stress: num(w.stress),
@@ -149,7 +146,7 @@ export function normaliseWellness(w) {
 /**
  * Parse structured tags out of an activity's name/description so logging can
  * happen in intervals.icu itself rather than only in this app.
- *   #drops  #upright  #mixed  #drops:90  #pain:mild  #rpe:7  #cycle:luteal  #carbs:60
+ *   #drops  #upright  #mixed  #drops:90  #pain:mild  #rpe:7  #carbs:60
  */
 export function parseTags(text) {
   if (!text) return null;
@@ -167,8 +164,6 @@ export function parseTags(text) {
   if (pain) out.back_pain = pain[1];
   const rpe = t.match(/#rpe:(\d+)/);
   if (rpe) out.rpe = parseInt(rpe[1], 10);
-  const cycle = t.match(/#cycle:([a-z_]+)/);
-  if (cycle) out.cycle_phase = cycle[1];
   const carbs = t.match(/#carbs:(\d+(?:\.\d+)?)/);
   if (carbs) out.carb_g_per_h = parseFloat(carbs[1]);
   return Object.keys(out).length ? out : null;
@@ -187,8 +182,8 @@ async function applyTags(activity) {
     await db
       .prepare(
         `INSERT INTO ride_logs (activity_id, date, position, drops_minutes, back_pain, rpe,
-        cycle_phase, carb_g_per_h, source, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,'tags',?,?)`
+        carb_g_per_h, source, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,'tags',?,?)`
       )
       .run(
         activity.id,
@@ -197,7 +192,6 @@ async function applyTags(activity) {
         tags.drops_minutes ?? null,
         tags.back_pain ?? null,
         tags.rpe ?? null,
-        tags.cycle_phase ?? null,
         tags.carb_g_per_h ?? null,
         now,
         now
@@ -207,7 +201,7 @@ async function applyTags(activity) {
   if (existing.source === 'manual') return 0;
   await db
     .prepare(
-      `UPDATE ride_logs SET position=?, drops_minutes=?, back_pain=?, rpe=?, cycle_phase=?,
+      `UPDATE ride_logs SET position=?, drops_minutes=?, back_pain=?, rpe=?,
        carb_g_per_h=?, updated_at=? WHERE id=?`
     )
     .run(
@@ -215,7 +209,6 @@ async function applyTags(activity) {
       tags.drops_minutes ?? existing.drops_minutes,
       tags.back_pain ?? existing.back_pain,
       tags.rpe ?? existing.rpe,
-      tags.cycle_phase ?? existing.cycle_phase,
       tags.carb_g_per_h ?? existing.carb_g_per_h,
       now,
       existing.id

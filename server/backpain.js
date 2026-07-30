@@ -18,7 +18,7 @@ export async function loggedRides(from, to) {
     .prepare(
       `SELECT a.id, a.date, a.name, a.type, a.intensity, a.vi, a.np, a.avg_power, a.tss,
               a.moving_time, a.distance_m, a.elevation_m,
-              r.position, r.drops_minutes, r.back_pain, r.pain_onset, r.rpe, r.notes, r.cycle_phase
+              r.position, r.drops_minutes, r.back_pain, r.pain_onset, r.rpe, r.notes
        FROM ride_logs r
        JOIN activities a ON a.id = r.activity_id
        WHERE r.date >= ? AND r.date <= ? AND r.back_pain IS NOT NULL
@@ -216,7 +216,7 @@ export async function upsertRideLog(log) {
     await db
       .prepare(
         `UPDATE ride_logs SET date=?, position=?, drops_minutes=?, back_pain=?, pain_onset=?, rpe=?,
-        cycle_phase=?, carb_g_per_h=?, protein_g=?, notes=?, source='manual', updated_at=? WHERE id=?`
+        carb_g_per_h=?, protein_g=?, notes=?, source='manual', updated_at=? WHERE id=?`
       )
       .run(
         log.date ?? existing.date,
@@ -225,7 +225,6 @@ export async function upsertRideLog(log) {
         log.back_pain ?? existing.back_pain,
         log.pain_onset ?? existing.pain_onset,
         log.rpe ?? existing.rpe,
-        log.cycle_phase ?? existing.cycle_phase,
         log.carb_g_per_h ?? existing.carb_g_per_h,
         log.protein_g ?? existing.protein_g,
         log.notes ?? existing.notes,
@@ -237,8 +236,8 @@ export async function upsertRideLog(log) {
   const info = await db
     .prepare(
       `INSERT INTO ride_logs (activity_id, date, position, drops_minutes, back_pain, pain_onset, rpe,
-        cycle_phase, carb_g_per_h, protein_g, notes, source, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual',?,?)`
+        carb_g_per_h, protein_g, notes, source, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,'manual',?,?)`
     )
     .run(
       log.activity_id ?? null,
@@ -248,7 +247,6 @@ export async function upsertRideLog(log) {
       log.back_pain ?? null,
       log.pain_onset ?? null,
       log.rpe ?? null,
-      log.cycle_phase ?? null,
       log.carb_g_per_h ?? null,
       log.protein_g ?? null,
       log.notes ?? null,
