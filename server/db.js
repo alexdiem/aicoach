@@ -315,17 +315,31 @@ async function migrate(d) {
   }
 }
 
-async function ensureColumn(d, table, column, decl) {
+// Vercel serverless instances share no memory (see the comment at the top of
+// this file), so on a fresh deploy several cold starts can run migrate()
+// concurrently against the same Turso database. Two instances can both see a
+// column present via PRAGMA table_info and both attempt to add/drop it — the
+// first wins, the second hits "duplicate column name" / "no such column"
+// purely because its sibling already finished the same idempotent change a
+// moment earlier. That's success, not failure, so it's swallowed rather than
+// thrown; anything else still propagates.
+export async function ensureColumn(d, table, column, decl) {
   const cols = await d.all(`PRAGMA table_info(${table})`);
-  if (!cols.some((c) => c.name === column)) {
+  if (cols.some((c) => c.name === column)) return;
+  try {
     await d.execRaw(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+  } catch (e) {
+    if (!/duplicate column name/i.test(e.message || '')) throw e;
   }
 }
 
-async function dropColumnIfExists(d, table, column) {
+export async function dropColumnIfExists(d, table, column) {
   const cols = await d.all(`PRAGMA table_info(${table})`);
-  if (cols.some((c) => c.name === column)) {
+  if (!cols.some((c) => c.name === column)) return;
+  try {
     await d.execRaw(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+  } catch (e) {
+    if (!/no such column/i.test(e.message || '')) throw e;
   }
 }
 
