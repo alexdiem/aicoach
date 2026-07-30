@@ -172,19 +172,10 @@ export async function buildBrief({ goalId = null, asOf = today() } = {}) {
     flags.push(redsFlag);
     if (redsFlag.action) actions.push(redsFlag.action);
   }
-  if (athlete.weight_kg) {
-    const proteinTarget = round(athlete.weight_kg * 2.0, 0);
-    if (fuel.proteinN >= 5 && fuel.proteinMean != null && fuel.proteinMean < proteinTarget * 0.85) {
-      flags.push({
-        id: 'protein',
-        severity: 'warn',
-        title: 'Protein below target',
-        text: `Logged protein averages ${fuel.proteinMean} g/day over ${fuel.proteinN} logged days against a ${proteinTarget} g target (2.0 g/kg at ${athlete.weight_kg} kg). At ${thisWeek?.target_tss ?? '—'} TSS/wk that shortfall shows up as poor session-to-session recovery before it shows up anywhere else.`,
-        numbers: { mean: fuel.proteinMean, target: proteinTarget },
-        framework: 'Sims',
-      });
-      actions.push(`Add ~${round(proteinTarget - fuel.proteinMean, 0)} g protein/day, weighted to within 30 min post-session (target ${proteinTarget} g/day at ${athlete.weight_kg} kg).`);
-    }
+  const protFlag = proteinFlag(fuel, athlete, thisWeek?.target_tss);
+  if (protFlag) {
+    flags.push(protFlag);
+    actions.push(protFlag.action);
   }
 
   // ------------------------------------------------- plan vs actual last week
@@ -485,7 +476,7 @@ function buildDirective({ adjustment, week, thisWeek, fit, tsb, ramp, rampCap, c
   };
 }
 
-function redsScreen(fuel, fit, weeks8) {
+export function redsScreen(fuel, fit, weeks8) {
   // Only fires on numbers. Needs a rising load AND at least one physiological
   // marker moving the wrong way; otherwise it stays quiet.
   const loadEarly = weeks8.slice(0, 4).reduce((s, w) => s + (w.tss || 0), 0) / 4;
@@ -517,6 +508,31 @@ function redsScreen(fuel, fit, weeks8) {
     text: `4-week load is up ${round(loadChange, 0)}% (${round(loadEarly, 0)} → ${round(loadLate, 0)} TSS/wk) alongside ${markers.join(', ')}. That combination is the early signature of low energy availability, and it is a nutrition problem before it is a training problem.`,
     numbers: { loadChangePct: round(loadChange, 0), ...fuel },
     action: `Raise daily intake to match the ${round(loadLate - loadEarly, 0)} TSS/wk increase before adding any more load — start with carbohydrate during sessions over 90 min and 30–40 g protein within 30 min after every hard session.`,
+  };
+}
+
+/**
+ * Logged protein (daily_logs.protein_g) against 2.0 g/kg bodyweight, once
+ * there are ≥5 logged days. `weekTargetTss` is optional context (the current
+ * plan week's target) purely for the wording — the threshold itself doesn't
+ * depend on it. Shared between the weekly brief and GET /api/metrics/fuelling
+ * so both read the same number the same way.
+ */
+export function proteinFlag(fuel, athlete, weekTargetTss = null) {
+  if (!athlete?.weight_kg) return null;
+  const proteinTarget = round(athlete.weight_kg * 2.0, 0);
+  if (!(fuel.proteinN >= 5) || fuel.proteinMean == null || !(fuel.proteinMean < proteinTarget * 0.85)) return null;
+  const weekClause = weekTargetTss != null
+    ? ` At ${weekTargetTss} TSS/wk that shortfall shows up as poor session-to-session recovery before it shows up anywhere else.`
+    : ' A shortfall this size usually shows up as poor session-to-session recovery before it shows up anywhere else.';
+  return {
+    id: 'protein',
+    severity: 'warn',
+    title: 'Protein below target',
+    text: `Logged protein averages ${fuel.proteinMean} g/day over ${fuel.proteinN} logged days against a ${proteinTarget} g target (2.0 g/kg at ${athlete.weight_kg} kg).${weekClause}`,
+    numbers: { mean: fuel.proteinMean, target: proteinTarget },
+    framework: 'Sims',
+    action: `Add ~${round(proteinTarget - fuel.proteinMean, 0)} g protein/day, weighted to within 30 min post-session (target ${proteinTarget} g/day at ${athlete.weight_kg} kg).`,
   };
 }
 

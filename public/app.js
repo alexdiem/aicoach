@@ -646,7 +646,11 @@ function weekDetail(w) {
 }
 
 views['/log'] = async () => {
-  const acts = await api('/api/activities?days=45');
+  const [acts, dailyLogs, fuelling] = await Promise.all([
+    api('/api/activities?days=45'),
+    api('/api/daily-logs?days=90'),
+    api('/api/metrics/fuelling'),
+  ]);
   const root = el('div');
   root.append(
     el(
@@ -754,7 +758,8 @@ views['/log'] = async () => {
   table.append(tb);
   root.append(el('div.card', {}, el('div.chart-wrap', {}, table)));
 
-  // Optional intake logging — feeds the low-energy-availability screen.
+  // Optional intake logging — feeds the low-energy-availability screen and
+  // the protein-target flag below.
   const dateInput = el('input', { type: 'date', value: todayStr() });
   const kcal = el('input', { type: 'number', style: 'width:100px' });
   const prot = el('input', { type: 'number', style: 'width:100px' });
@@ -787,11 +792,60 @@ views['/log'] = async () => {
             },
           }, 'Save day')
         )
-      )
+      ),
+      fuellingCard(fuelling)
     )
   );
+
+  if (dailyLogs.length) {
+    const t = el('table.data');
+    t.append(el('thead', {}, el('tr', {}, ['Date', 'Intake (kcal)', 'Protein (g)', 'Notes'].map((h) => el('th', {}, h)))));
+    const tbody = el(
+      'tbody',
+      {},
+      dailyLogs.map((d) =>
+        el(
+          'tr',
+          {},
+          el('td', {}, d.date),
+          el('td.num', {}, d.intake_kcal ?? '—'),
+          el('td.num', {}, d.protein_g ?? '—'),
+          el('td.muted', {}, d.notes || d.symptoms || '')
+        )
+      )
+    );
+    t.append(tbody);
+    root.append(el('div.card', {}, el('h3', {}, 'Logged days'), el('div.chart-wrap', {}, t)));
+  }
   return root;
 };
+
+/** The rolling numbers behind the protein/RED-S flags, and whether either is
+ * currently firing — so "have I logged enough to trigger advice" has a
+ * direct answer instead of only showing up buried in the weekly brief. */
+function fuellingCard(f) {
+  const stats = [];
+  if (f.intakeN) stats.push(`Intake ${fmt(f.intakeMean, 0)} kcal/day (${f.intakeN} days logged)`);
+  if (f.proteinN) stats.push(`Protein ${fmt(f.proteinMean, 0)} g/day${f.proteinTarget ? ` vs ${f.proteinTarget} g target` : ''} (${f.proteinN} days logged)`);
+  if (!stats.length) {
+    return el('p.muted', { style: 'margin-top:10px' }, 'Nothing logged yet in the last 28 days — the protein and low-energy-availability checks need at least 5 logged days to say anything.');
+  }
+  return el(
+    'div',
+    { style: 'margin-top:10px' },
+    el('p.muted', {}, stats.join(' · ')),
+    f.flags.length
+      ? f.flags.map((flag) =>
+          el(
+            `div.flag.${flag.severity}`,
+            {},
+            el('span.icon', {}, flag.severity === 'critical' ? '🔴' : flag.severity === 'warn' ? '🟠' : '🔵'),
+            el('div', {}, el('div.title', {}, flag.title), el('div', {}, flag.text))
+          )
+        )
+      : el('p.muted', {}, 'Not triggering the protein or low-energy-availability checks right now.')
+  );
+}
 
 views['/pain'] = async () => {
   const root = el('div');

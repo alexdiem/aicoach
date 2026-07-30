@@ -469,3 +469,24 @@ test('intervals.icu client resolves the stored settings, not a stray Promise, wh
     assert.match(url, /\/athlete\/(0|42)(\/|$)/, `URL did not contain a real athlete id: ${url}`);
   }
 });
+
+test('proteinFlag: fires on a genuine shortfall, stays quiet on thin data or no shortfall', () => {
+  const athlete = { weight_kg: 60 }; // target = 120 g/day
+  const shortfall = { proteinN: 6, proteinMean: 95 }; // < 120 * 0.85 = 102
+  const onTarget = { proteinN: 6, proteinMean: 110 };
+  const thinData = { proteinN: 3, proteinMean: 80 };
+
+  const withWeek = brief.proteinFlag(shortfall, athlete, 500);
+  assert.ok(withWeek, 'expected a flag on a genuine shortfall');
+  assert.equal(withWeek.severity, 'warn');
+  assert.equal(withWeek.numbers.target, 120);
+  assert.match(withWeek.text, /500 TSS\/wk/);
+
+  const withoutWeek = brief.proteinFlag(shortfall, athlete);
+  assert.ok(withoutWeek);
+  assert.doesNotMatch(withoutWeek.text, /TSS\/wk/);
+
+  assert.equal(brief.proteinFlag(onTarget, athlete), null, 'on-target protein should not flag');
+  assert.equal(brief.proteinFlag(thinData, athlete), null, 'fewer than 5 logged days should not flag');
+  assert.equal(brief.proteinFlag(shortfall, {}), null, 'no athlete weight on file should not flag');
+});
