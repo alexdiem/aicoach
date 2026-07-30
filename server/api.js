@@ -15,6 +15,7 @@ import {
 } from './planner.js';
 import { buildBrief, saveBrief, getBrief, listBriefs, runWeekly } from './brief.js';
 import { buildWorkoutDebrief } from './debrief.js';
+import { dailyReadiness } from './readiness.js';
 import { painCorrelation, upsertRideLog, loggedRides, recentPain } from './backpain.js';
 import { authEnabled, checkPassword, createSessionCookie, clearSessionCookie } from './auth.js';
 
@@ -256,6 +257,8 @@ export const routes = {
 
   'GET /api/briefs': async ({ query }) => (await listBriefs(parseInt(query.limit || '52', 10))).map(hydrateBrief),
 
+  'GET /api/readiness': async ({ query }) => dailyReadiness(query.date || today()),
+
   // --- activities & logs ---------------------------------------------------
   'GET /api/activities': async ({ query }) => {
     const to = query.to || today();
@@ -312,12 +315,9 @@ export const routes = {
     if (!d.date) throw httpError(400, 'date required');
     await db
       .prepare(
-        `INSERT INTO daily_logs (date, cycle_phase, cycle_day, period_start, intake_kcal, protein_g, back_pain, symptoms, notes, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?)
+        `INSERT INTO daily_logs (date, intake_kcal, protein_g, back_pain, symptoms, notes, updated_at)
+       VALUES (?,?,?,?,?,?,?)
        ON CONFLICT(date) DO UPDATE SET
-         cycle_phase=COALESCE(excluded.cycle_phase, daily_logs.cycle_phase),
-         cycle_day=COALESCE(excluded.cycle_day, daily_logs.cycle_day),
-         period_start=COALESCE(excluded.period_start, daily_logs.period_start),
          intake_kcal=COALESCE(excluded.intake_kcal, daily_logs.intake_kcal),
          protein_g=COALESCE(excluded.protein_g, daily_logs.protein_g),
          back_pain=COALESCE(excluded.back_pain, daily_logs.back_pain),
@@ -326,8 +326,7 @@ export const routes = {
          updated_at=excluded.updated_at`
       )
       .run(
-        d.date, d.cycle_phase || null, numOrNull(d.cycle_day), d.period_start ? 1 : 0,
-        numOrNull(d.intake_kcal), numOrNull(d.protein_g), d.back_pain || null, d.symptoms || null,
+        d.date, numOrNull(d.intake_kcal), numOrNull(d.protein_g), d.back_pain || null, d.symptoms || null,
         d.notes || null, new Date().toISOString()
       );
     return db.prepare('SELECT * FROM daily_logs WHERE date = ?').get(d.date);

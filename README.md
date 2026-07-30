@@ -101,7 +101,7 @@ correlation, the frontend — is the identical code running in both places.
    | `TURSO_DATABASE_URL` | from step 1 | yes — without it the app has nowhere to persist data |
    | `TURSO_AUTH_TOKEN` | from step 1 | yes |
    | `CRON_SECRET` | any random string | recommended — without it `/api/cron` is unauthenticated (harmless, but locking it down is one field) |
-   | `APP_PASSWORD` | a password you choose | strongly recommended — without it (and `SESSION_SECRET`) the deployed app is reachable by anyone with the URL, including your cycle data, back pain logs, and intervals.icu key |
+   | `APP_PASSWORD` | a password you choose | strongly recommended — without it (and `SESSION_SECRET`) the deployed app is reachable by anyone with the URL, including your training data, back pain logs, and intervals.icu key |
    | `SESSION_SECRET` | a random key | required alongside `APP_PASSWORD` — signs the session cookie; never the password itself |
 
    Generate both with:
@@ -174,6 +174,16 @@ never quote three different numbers. The change is recorded in the week's framew
 current CTL, compliance and EF trend. Weeks before the current one are carried over
 verbatim, so what was originally prescribed survives every regeneration. Plan versions
 are kept.
+
+**Today, not just this week.** The Brief page also shows a same-day readiness check —
+HRV and resting HR against your own trailing 21-day baseline, and last night's sleep
+duration — using whatever daily wellness sync already pulled in. Quiet unless a number
+crosses a line, and it stays quiet entirely if there's no recent wellness data to read.
+The 1–4/1–5 subjective wellness fields intervals.icu also syncs (soreness, fatigue,
+stress, mood, motivation, injury, its own "readiness" score) are shown as logged, not
+scored — this app couldn't get a confident, verified read on which direction of that
+scale means "better" from intervals.icu's docs, and guessing wrong there would mean
+giving backwards recovery advice, which is worse than showing the plain number.
 
 ## Back-pain monitoring
 

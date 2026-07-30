@@ -294,7 +294,7 @@ function plannedActualChart(weeks, { height = 200 } = {}) {
 const views = {};
 
 views['/brief'] = async () => {
-  const [status, brief] = await Promise.all([api('/api/status'), api('/api/brief')]);
+  const [status, brief, readiness] = await Promise.all([api('/api/status'), api('/api/brief'), api('/api/readiness')]);
   const root = el('div');
 
   if (status.jobFailures?.length) root.append(jobFailuresBanner(status.jobFailures));
@@ -304,6 +304,9 @@ views['/brief'] = async () => {
       el('div.notice', {}, 'No active goal yet. ', el('a', { href: '#/goals' }, 'Create one'), ' to get a periodized plan.')
     );
   }
+
+  const readinessEl = readinessCard(readiness);
+  if (readinessEl) root.append(readinessEl);
 
   const m = brief.metrics || {};
   root.append(
@@ -416,6 +419,53 @@ function tsbNote(tsb) {
 
 function tile(label, value, sub, cls = '') {
   return el(`div.tile${cls ? '.' + cls : ''}`, {}, el('div.label', {}, label), el('div.value', {}, value), sub ? el('div.sub', {}, sub) : null);
+}
+
+const SUBJECTIVE_LABELS = {
+  soreness: 'Soreness', fatigue: 'Fatigue', stress: 'Stress', mood: 'Mood',
+  motivation: 'Motivation', injury: 'Injury', readiness: 'Readiness (intervals.icu)',
+};
+
+/** Today's HRV/resting-HR/sleep check, quiet when there's no recent wellness
+ * sync to read (see server/readiness.js for why the subjective 1-4/1-5
+ * fields are shown as logged rather than scored). */
+function readinessCard(r) {
+  if (!r?.hasData) return null;
+  const stats = [];
+  if (r.hrv != null) stats.push(`HRV ${fmt(r.hrv, 0)}`);
+  if (r.restingHr != null) stats.push(`Resting HR ${fmt(r.restingHr, 0)}`);
+  if (r.sleepHours != null) stats.push(`Sleep ${fmt(r.sleepHours, 1)}h`);
+
+  const subjParts = r.subjective
+    ? Object.entries(r.subjective)
+        .filter(([, v]) => v != null)
+        .map(([k, v]) => `${SUBJECTIVE_LABELS[k] || k} ${v}`)
+    : [];
+
+  return el(
+    'div.card',
+    {},
+    el('h3', {}, `Today — ${r.date}`),
+    el('p', { style: 'font-size:16px' }, r.headline),
+    stats.length ? el('p.muted', {}, stats.join(' · ')) : null,
+    r.flags.length
+      ? el(
+          'div',
+          {},
+          r.flags.map((f) =>
+            el(
+              `div.flag.${f.severity}`,
+              {},
+              el('span.icon', {}, f.severity === 'critical' ? '🔴' : f.severity === 'warn' ? '🟠' : f.severity === 'good' ? '🟢' : '🔵'),
+              el('div', {}, el('div.title', {}, f.title), el('div', {}, f.text))
+            )
+          )
+        )
+      : null,
+    subjParts.length
+      ? el('p.muted', { style: 'margin-top:8px' }, `Logged: ${subjParts.join(' · ')} — self-rated in intervals.icu, shown as logged rather than scored.`)
+      : null
+  );
 }
 
 /** The coach's explanation of the whole arc — why the plan is shaped this way, not just what the numbers are. */
