@@ -7,13 +7,13 @@ import { syncFromIntervals, lastSync } from './sync.js';
 import { testConnection } from './intervals.js';
 import {
   currentFitness, fitnessSeries, recentWeeks, weekActuals, compareWeek, efSamples, efTrend,
-  rampRate, activitiesBetween,
+  rampRate, activitiesBetween, fuellingSignals,
 } from './metrics.js';
 import {
   generatePlan, savePlan, activePlan, planWeeks, weekForDate, activeGoal, regenerate, estimateDuration,
   durationClass, adaptationInputs,
 } from './planner.js';
-import { buildBrief, saveBrief, getBrief, listBriefs, runWeekly } from './brief.js';
+import { buildBrief, saveBrief, getBrief, listBriefs, runWeekly, redsScreen, proteinFlag } from './brief.js';
 import { buildWorkoutDebrief } from './debrief.js';
 import { dailyReadiness } from './readiness.js';
 import { painCorrelation, upsertRideLog, loggedRides, recentPain } from './backpain.js';
@@ -362,6 +362,22 @@ export const routes = {
     const from = query.from || addDays(to, -parseInt(query.days || '180', 10));
     const [samples, trend] = await Promise.all([efSamples(from, to), efTrend(to)]);
     return { samples, trend };
+  },
+
+  // The rolling numbers behind the protein/RED-S flags, and whether they're
+  // currently firing — reuses the exact same checks the weekly brief runs,
+  // so a "why isn't this flagging" question has one answer, not two.
+  'GET /api/metrics/fuelling': async ({ query }) => {
+    const asOf = query.date || today();
+    const [fuel, fit, weeks8, athlete] = await Promise.all([
+      fuellingSignals(asOf),
+      currentFitness(asOf),
+      recentWeeks(asOf, 8),
+      getAthlete(),
+    ]);
+    const proteinTarget = athlete?.weight_kg ? round(athlete.weight_kg * 2.0, 0) : null;
+    const flags = [redsScreen(fuel, fit, weeks8), proteinFlag(fuel, athlete)].filter(Boolean);
+    return { ...fuel, proteinTarget, flags };
   },
 };
 
