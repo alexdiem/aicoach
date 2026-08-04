@@ -490,3 +490,80 @@ test('proteinFlag: fires on a genuine shortfall, stays quiet on thin data or no 
   assert.equal(brief.proteinFlag(thinData, athlete), null, 'fewer than 5 logged days should not flag');
   assert.equal(brief.proteinFlag(shortfall, {}), null, 'no athlete weight on file should not flag');
 });
+
+function makeComparison({ pct, plannedTss = 400, actualHours = 8, plannedHours = 8, skew = 0, longDeltaHours = 0, longPlannedHours = 3 } = {}) {
+  const actualTss = pct == null ? null : Math.round((plannedTss * pct) / 100);
+  return {
+    plannedTss, actualTss, tssDelta: (actualTss ?? 0) - plannedTss, tssPct: pct,
+    plannedHours, actualHours,
+    distribution: {
+      planned: { z1_2: 85, z3_4: 12, z5: 3 },
+      actual: skew ? { z1_2: 85 - skew, z3_4: 12 + skew, z5: 3 } : { z1_2: 85, z3_4: 12, z5: 3 },
+      z1_2Delta: -skew, z3_4Delta: skew, z5Delta: 0,
+    },
+    longSession: { plannedHours: longPlannedHours, actualHours: longPlannedHours + longDeltaHours, deltaHours: longDeltaHours },
+  };
+}
+
+test('evaluateCompliance: a verdict per tier, not just a percentage', () => {
+  // No comparable target at all.
+  const none = brief.evaluateCompliance(makeComparison({ pct: null }), null, null);
+  assert.equal(none.severity, 'info');
+  assert.equal(none.action, undefined);
+
+  // Recovery week: riding through it is the problem, not the shortfall.
+  const recoveryBlownThrough = brief.evaluateCompliance(makeComparison({ pct: 95 }), { is_recovery: 1 }, null);
+  assert.equal(recoveryBlownThrough.severity, 'warn');
+  assert.ok(recoveryBlownThrough.action, 'expected an action telling them to actually take the next recovery week');
+  const recoveryDone = brief.evaluateCompliance(makeComparison({ pct: 55 }), { is_recovery: 1 }, null);
+  assert.equal(recoveryDone.severity, 'good');
+  assert.equal(recoveryDone.action, undefined);
+
+  // Severe shortfall on a loading week: don't overcorrect, resume as written.
+  const severeUnder = brief.evaluateCompliance(makeComparison({ pct: 40 }), { is_recovery: 0 }, null);
+  assert.equal(severeUnder.severity, 'warn');
+  assert.match(severeUnder.action, /resume/);
+
+  // Moderate shortfall, chronic: name the constraint, not another number tweak.
+  const chronic = brief.evaluateCompliance(
+    makeComparison({ pct: 65 }), { is_recovery: 0 },
+    { chronicUndercompliance: true, complianceWeeks: 4, compliancePct: 68 }
+  );
+  assert.equal(chronic.severity, 'warn');
+  assert.match(chronic.text, /4 weeks running/);
+  assert.match(chronic.action, /constraint/);
+
+  // Moderate shortfall, one-off: different advice than the chronic case.
+  const oneOff = brief.evaluateCompliance(makeComparison({ pct: 65 }), { is_recovery: 0 }, { chronicUndercompliance: false });
+  assert.equal(oneOff.severity, 'warn');
+  assert.doesNotMatch(oneOff.text, /weeks running/);
+
+  // Slight shortfall: not worth chasing, no action forced.
+  const slightUnder = brief.evaluateCompliance(makeComparison({ pct: 85 }), { is_recovery: 0 }, null);
+  assert.equal(slightUnder.severity, 'info');
+  assert.equal(slightUnder.action, undefined);
+
+  // On target: the week to repeat.
+  const onTarget = brief.evaluateCompliance(makeComparison({ pct: 100 }), { is_recovery: 0 }, null);
+  assert.equal(onTarget.severity, 'good');
+
+  // Ran hot but not dangerously: a caution, not an alarm.
+  const ranHot = brief.evaluateCompliance(makeComparison({ pct: 118 }), { is_recovery: 0 }, null);
+  assert.equal(ranHot.severity, 'info');
+  assert.equal(ranHot.action, undefined);
+
+  // Well past plan: a real warning with a concrete instruction.
+  const severeOver = brief.evaluateCompliance(makeComparison({ pct: 140 }), { is_recovery: 0 }, null);
+  assert.equal(severeOver.severity, 'warn');
+  assert.match(severeOver.action, /hold this week/);
+
+  // Intensity skew escalates an otherwise-fine week to a warn with an action.
+  const skewed = brief.evaluateCompliance(makeComparison({ pct: 100, skew: 8 }), { is_recovery: 0 }, null);
+  assert.equal(skewed.severity, 'warn');
+  assert.match(skewed.action, /Time above Z2/);
+
+  // A shortened long session escalates severity and adds an action even on an otherwise on-target week.
+  const shortLong = brief.evaluateCompliance(makeComparison({ pct: 100, longDeltaHours: -1.5 }), { is_recovery: 0 }, null);
+  assert.equal(shortLong.severity, 'warn');
+  assert.match(shortLong.action, /long session/i);
+});

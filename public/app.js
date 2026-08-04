@@ -485,10 +485,12 @@ function explainPlan(plan, params) {
   s += `${taperWeeks} week${taperWeeks === 1 ? '' : 's'} of taper bring${taperWeeks === 1 ? 's' : ''} you to the start line rested without losing sharpness.`;
 
   const gapPct = params.targets?.targetCtl ? ((params.targets.targetCtl - params.targets.achievableCtl) / params.targets.targetCtl) * 100 : 0;
-  if (gapPct > 8) {
-    s += ` One honest caveat: the event profile really justifies a peak fitness (CTL) around ${fmt(params.targets.targetCtl, 0)}, and from where you're starting this plan only gets you to about ${fmt(params.targets.achievableCtl, 0)} in the time available — worth knowing now rather than on race day, and the notes below spell out the tradeoff.`;
+  if (gapPct > 20) {
+    s += ` My honest read: this runway is too short for this goal. The event profile wants peak fitness (CTL) around ${fmt(params.targets.targetCtl, 0)}; from where you're starting, this plan tops out around ${fmt(params.targets.achievableCtl, 0)} — a ${fmt(gapPct, 0)}% gap that more base weeks alone won't close without more time. Pick one, deliberately, now: push the event back, cut what you're asking of it (a shorter cut of the route, a slower target), or go in accepting a fitness the plan can actually deliver. Any of those is fine — finding this out in week three of build, when the gap is harder to argue with, isn't.`;
+  } else if (gapPct > 8) {
+    s += ` One real caveat: the event profile justifies a peak fitness (CTL) around ${fmt(params.targets.targetCtl, 0)}, and this plan gets you to about ${fmt(params.targets.achievableCtl, 0)} in the time available. That's close enough to run with, but don't pace race day off the course's best-case demands — pace it off the fitness this block will actually hand you, and treat anything better as a bonus.`;
   } else {
-    s += ` The runway you've given this is enough to reach the fitness this event calls for — CTL ${fmt(params.targets?.achievableCtl, 0)} against a target of ${fmt(params.targets?.targetCtl, 0)}.`;
+    s += ` This runway comfortably covers what the event asks for — CTL ${fmt(params.targets?.achievableCtl, 0)} against a target of ${fmt(params.targets?.targetCtl, 0)}. The fitness isn't the risk here; compliance is. Show up for the base weeks as written and the rest takes care of itself.`;
   }
   return s;
 }

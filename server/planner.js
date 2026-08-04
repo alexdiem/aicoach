@@ -599,14 +599,15 @@ function focusFor(phase, cls) {
   return map[phase] || '';
 }
 
-/** What actually happened recently — the input that makes replanning adaptive. */
-export async function adaptationInputs(asOf = today()) {
-  const [weeksAll, fitness, ef] = await Promise.all([recentWeeks(asOf, 5), currentFitness(asOf), efTrend(asOf)]);
-  const weeks = weeksAll.slice(0, 4); // last 4 complete weeks
-
+/**
+ * Actual vs planned TSS over a set of weekly actuals (see recentWeeks) — split
+ * out of adaptationInputs so callers that already have their own weekly
+ * actuals (buildBrief) can get compliance numbers without also re-fetching
+ * currentFitness/efTrend/recentWeeks a second time in the same request.
+ */
+export async function complianceWindow(weeks) {
   const actualWeekly = weeks.map((w) => w.tss || 0);
   const actualWeeklyMean = round(mean(actualWeekly), 0);
-  const recentLongestHours = Math.max(0, ...weeks.map((w) => w.longestHours || 0));
 
   const plannedRows = await Promise.all(
     weeks.map((w) =>
@@ -622,6 +623,22 @@ export async function adaptationInputs(asOf = today()) {
   const plannedMean = round(mean(planned), 0);
   const compliancePct = plannedMean ? round(((actualWeeklyMean || 0) / plannedMean) * 100, 0) : null;
 
+  return {
+    actualWeeklyMean,
+    plannedWeeklyMean: plannedMean,
+    compliancePct,
+    complianceWeeks: planned.length,
+    chronicUndercompliance: compliancePct != null && compliancePct < 80 && planned.length >= 2,
+  };
+}
+
+/** What actually happened recently — the input that makes replanning adaptive. */
+export async function adaptationInputs(asOf = today()) {
+  const [weeksAll, fitness, ef] = await Promise.all([recentWeeks(asOf, 5), currentFitness(asOf), efTrend(asOf)]);
+  const weeks = weeksAll.slice(0, 4); // last 4 complete weeks
+  const recentLongestHours = Math.max(0, ...weeks.map((w) => w.longestHours || 0));
+  const compliance = await complianceWindow(weeks);
+
   const atlRising = weeks.length >= 2 && (weeks[weeks.length - 1].tss || 0) > (weeks[0].tss || 0);
   const underRecovery =
     ef.reliable && ef.changePct != null && ef.changePct <= -5 && (atlRising || (fitness.tsb ?? 0) < -20);
@@ -632,11 +649,7 @@ export async function adaptationInputs(asOf = today()) {
     tsb: round(fitness.tsb, 1),
     efChangePct: ef.changePct,
     efReliable: ef.reliable,
-    actualWeeklyMean,
-    plannedWeeklyMean: plannedMean,
-    compliancePct,
-    complianceWeeks: planned.length,
-    chronicUndercompliance: compliancePct != null && compliancePct < 80 && planned.length >= 2,
+    ...compliance,
     recentLongestHours: round(recentLongestHours, 1),
     underRecovery: !!underRecovery,
   };
