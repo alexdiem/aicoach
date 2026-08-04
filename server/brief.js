@@ -10,7 +10,7 @@ import {
   currentFitness, rampRate, efTrend, viDrift, wbalRecoveryFlag, weekActuals,
   compareWeek, recentWeeks, fuellingSignals,
 } from './metrics.js';
-import { activePlan, weekForDate, activeGoal, adaptationInputs, regenerate, tssPerHour } from './planner.js';
+import { activePlan, weekForDate, activeGoal, adaptationInputs, complianceWindow, regenerate, tssPerHour } from './planner.js';
 import { painFlag, recentPain } from './backpain.js';
 
 const SEV_ORDER = { critical: 0, warn: 1, info: 2, good: 3 };
@@ -23,7 +23,7 @@ export async function buildBrief({ goalId = null, asOf = today() } = {}) {
   // Everything in this batch is independent of everything else in it — fired
   // together rather than awaited one at a time, since a networked DB's round
   // trip (not local disk I/O) is the dominant cost here once deployed.
-  const [plan, fit, ramp, ef, vi, wbal, weeks8, fuel, painEvents, athlete, lastActual, adapt] = await Promise.all([
+  const [plan, fit, ramp, ef, vi, wbal, weeks8, fuel, painEvents, athlete, lastActual] = await Promise.all([
     goal ? activePlan(goal.id) : null,
     currentFitness(asOf),
     rampRate(asOf),
@@ -35,13 +35,17 @@ export async function buildBrief({ goalId = null, asOf = today() } = {}) {
     recentPain({ asOf, days: 28 }),
     getAthlete(),
     weekActuals(lastWs),
-    adaptationInputs(asOf),
   ]);
 
-  const [thisWeek, lastPlanWeek, pain] = await Promise.all([
+  // Compliance numbers off the weeks8 already fetched above, rather than
+  // adaptationInputs' own currentFitness/efTrend/recentWeeks(asOf, 5) — that
+  // would re-run three queries buildBrief already just ran to get one field
+  // (chronicUndercompliance) out of the seven adaptationInputs returns.
+  const [thisWeek, lastPlanWeek, pain, adapt] = await Promise.all([
     plan ? weekForDate(plan.id, ws) : null,
     plan ? weekForDate(plan.id, lastWs) : null,
     painFlag({ asOf }),
+    complianceWindow(weeks8.slice(-5, -1)),
   ]);
   const comparison = lastPlanWeek ? compareWeek(lastPlanWeek, lastActual) : null;
 
