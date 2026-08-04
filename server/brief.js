@@ -23,7 +23,7 @@ export async function buildBrief({ goalId = null, asOf = today() } = {}) {
   // Everything in this batch is independent of everything else in it — fired
   // together rather than awaited one at a time, since a networked DB's round
   // trip (not local disk I/O) is the dominant cost here once deployed.
-  const [plan, fit, ramp, ef, vi, wbal, weeks8, fuel, painEvents, athlete, lastActual] = await Promise.all([
+  const [plan, fit, ramp, ef, vi, wbal, weeks8, fuel, painEvents, athlete, lastActual, adapt] = await Promise.all([
     goal ? activePlan(goal.id) : null,
     currentFitness(asOf),
     rampRate(asOf),
@@ -35,6 +35,7 @@ export async function buildBrief({ goalId = null, asOf = today() } = {}) {
     recentPain({ asOf, days: 28 }),
     getAthlete(),
     weekActuals(lastWs),
+    adaptationInputs(asOf),
   ]);
 
   const [thisWeek, lastPlanWeek, pain] = await Promise.all([
@@ -180,19 +181,9 @@ export async function buildBrief({ goalId = null, asOf = today() } = {}) {
 
   // ------------------------------------------------- plan vs actual last week
   if (comparison) {
-    const c = comparison;
-    const sev = c.tssPct == null ? 'info' : c.tssPct < 75 || c.tssPct > 125 ? 'warn' : 'good';
-    let text = `Last week: ${c.actualTss} TSS against ${c.plannedTss} planned (${c.tssPct}%), ${c.actualHours}h against ${c.plannedHours}h.`;
-    if (c.distribution.actual.z1_2 != null) {
-      text += ` Time split ${c.distribution.actual.z1_2}/${c.distribution.actual.z3_4}/${c.distribution.actual.z5} vs planned ${c.distribution.planned.z1_2}/${c.distribution.planned.z3_4}/${c.distribution.planned.z5}.`;
-      if ((c.distribution.z3_4Delta ?? 0) + (c.distribution.z5Delta ?? 0) > 6) {
-        text += ` That's ${round((c.distribution.z3_4Delta || 0) + (c.distribution.z5Delta || 0), 0)} percentage points more time above Z2 than prescribed — the usual cause of an unplanned ATL spike.`;
-      }
-    }
-    if (c.longSession.plannedHours && c.longSession.deltaHours < -1) {
-      text += ` Long session was ${c.longSession.actualHours}h against ${c.longSession.plannedHours}h planned (${signed(c.longSession.deltaHours, 1)}h) — for this goal the long day is the specificity, so protect it ahead of the midweek intervals.`;
-    }
-    flags.push({ id: 'compliance', severity: sev, title: 'Last week: planned vs actual', text, numbers: c });
+    const verdict = evaluateCompliance(comparison, lastPlanWeek, adapt);
+    flags.push({ id: 'compliance', severity: verdict.severity, title: 'Last week: planned vs actual', text: verdict.text, numbers: comparison });
+    if (verdict.action) actions.push(verdict.action);
   }
 
   // ---------------------------------------------- decide and APPLY the change
@@ -474,6 +465,92 @@ function buildDirective({ adjustment, week, thisWeek, fit, tsb, ramp, rampCap, c
     headline: `Execute the plan: ${week.target_tss} TSS / ${week.target_hours}h, ${week.z1_2_pct}/${week.z3_4_pct}/${week.z5_pct} time split, ${week.long_session_h}h long session, ${week.strength_sessions} strength.`,
     text: `Nothing to adjust this week — just execute. TSB ${signed(tsb)} and ramp ${ramp == null ? 'n/a' : signed(ramp) + ' CTL/wk'} (cap ${rampCap}) are both inside limits for a ${week.phase} week${week.is_recovery ? ' (recovery)' : ''}, and last week landed at ${comparison?.tssPct ?? '—'}% of target. When the numbers agree with the plan like this, the best thing I can tell you is to trust it and get the work done.`,
   };
+}
+
+/**
+ * A verdict on last week, not a report of it — every tier says what to do
+ * about the number, not just what the number was. Recovery weeks are judged
+ * against a different standard (undershooting one is the point; overshooting
+ * one is the actual problem), and a shortfall gets read differently once
+ * adaptationInputs says it's the Nth week running, not a one-off.
+ */
+export function evaluateCompliance(c, lastPlanWeek, adapt) {
+  const pct = c.tssPct;
+  if (pct == null) {
+    return { severity: 'info', text: `Last week: ${c.actualTss} TSS, ${c.actualHours}h — no comparable target to grade it against.` };
+  }
+
+  let verdict;
+  if (lastPlanWeek?.is_recovery) {
+    verdict = pct > 90
+      ? {
+          severity: 'warn',
+          text: `Last week: ${c.actualTss} of ${c.plannedTss} TSS (${pct}%) on a week that was supposed to be a recovery week. You rode through it instead of taking it — that's not extra fitness banked, it's the fatigue this week was meant to clear still sitting there. Don't be surprised if Form doesn't move the way the numbers say it should.`,
+          action: `Last week's recovery week landed at ${pct}% of target — actually take the next one, or the 3:1 pattern stops doing its job and TSB never resets.`,
+        }
+      : {
+          severity: 'good',
+          text: `Last week: ${c.actualTss} of ${c.plannedTss} TSS (${pct}%) — right where a recovery week should land. This is what lets the next block start clean; don't second-guess it just because the number looks small.`,
+        };
+  } else if (pct < 50) {
+    verdict = {
+      severity: 'warn',
+      text: `Last week: ${c.actualTss} of ${c.plannedTss} planned TSS (${pct}%) — you missed most of the week. One week like this doesn't undo a block, so don't try to claw it back by overloading this week; that just trades a missed week for an overreached one. Pick the plan back up where it is.`,
+      action: `Last week landed at only ${pct}% of target — resume this week as written rather than trying to make up the missed volume.`,
+    };
+  } else if (pct < 75) {
+    if (adapt?.chronicUndercompliance) {
+      verdict = {
+        severity: 'warn',
+        text: `Last week: ${c.actualTss} of ${c.plannedTss} TSS (${pct}%) — and that's ${adapt.complianceWeeks} weeks running under plan, averaging ${adapt.compliancePct}%. The plan is already rebuilding around what you actually do rather than what was written, but rewriting the numbers again isn't the fix at this point — the honest question is what's actually eating the time or the motivation. Worth naming that so the plan can be built around the real constraint instead of guessing at it every week.`,
+        action: `${adapt.complianceWeeks} weeks in a row under plan (${adapt.compliancePct}% average) — figure out and name the actual constraint (time, motivation, fatigue) rather than letting the plan keep quietly shrinking to match it.`,
+      };
+    } else {
+      verdict = {
+        severity: 'warn',
+        text: `Last week: ${c.actualTss} of ${c.plannedTss} TSS (${pct}%) — a real shortfall. If it was a one-off (travel, work, life), let it go and get this week in as written. If you can already feel it turning into a pattern, say so now rather than after three more weeks like it.`,
+        action: `Last week was ${pct}% of target — get this week in as written if last week was a one-off; flag it now if it's becoming a pattern.`,
+      };
+    }
+  } else if (pct <= 90) {
+    verdict = {
+      severity: 'info',
+      text: `Last week: ${c.actualTss} of ${c.plannedTss} TSS (${pct}%) — a bit light, but close enough that it isn't worth chasing. Get this week in full and don't bother trying to make up the difference.`,
+    };
+  } else if (pct <= 110) {
+    verdict = {
+      severity: 'good',
+      text: `Last week: ${c.actualTss} of ${c.plannedTss} TSS (${pct}%) — right on target. This is the week to repeat, not the exception.`,
+    };
+  } else if (pct <= 125) {
+    verdict = {
+      severity: 'info',
+      text: `Last week: ${c.actualTss} of ${c.plannedTss} TSS (${pct}%) — you ran hot. Fine as a one-off if it felt good, but don't let this quietly become the new baseline — that's how a ramp cap gets broken without anyone actually deciding it should be.`,
+    };
+  } else {
+    verdict = {
+      severity: 'warn',
+      text: `Last week: ${c.actualTss} of ${c.plannedTss} TSS (${pct}%) — well past what was planned. That isn't free fitness, it's fatigue that wasn't budgeted for; expect this week's numbers to reflect it. Don't add more on top just because last week felt fine at the time — it usually doesn't stay fine.`,
+      action: `Last week ran ${pct}% of target — hold this week to the plan rather than continuing to push. The extra load doesn't bank, it just accumulates fatigue that shows up later.`,
+    };
+  }
+
+  if (c.distribution.actual.z1_2 != null) {
+    verdict.text += ` Time split ${c.distribution.actual.z1_2}/${c.distribution.actual.z3_4}/${c.distribution.actual.z5} vs planned ${c.distribution.planned.z1_2}/${c.distribution.planned.z3_4}/${c.distribution.planned.z5}.`;
+    const skew = (c.distribution.z3_4Delta ?? 0) + (c.distribution.z5Delta ?? 0);
+    if (skew > 6) {
+      verdict.text += ` That's ${round(skew, 0)} percentage points more time above Z2 than prescribed — the usual cause of an unplanned ATL spike, and worth reining in deliberately rather than letting it repeat.`;
+      verdict.severity = 'warn';
+      if (!verdict.action) verdict.action = `Time above Z2 ran ${round(skew, 0)} points hotter than planned last week — hold intensity to what's prescribed this week rather than letting easy days drift into moderate ones.`;
+    }
+  }
+  if (c.longSession.plannedHours && c.longSession.deltaHours < -1) {
+    verdict.text += ` Long session was ${c.longSession.actualHours}h against ${c.longSession.plannedHours}h planned (${signed(c.longSession.deltaHours, 1)}h) — for this goal the long day is the specificity that matters most, so protect it ahead of the midweek intervals if something has to give.`;
+    if (verdict.severity === 'good' || verdict.severity === 'info') verdict.severity = 'warn';
+    if (!verdict.action) verdict.action = `The long session ran ${signed(c.longSession.deltaHours, 1)}h short last week — protect it ahead of midweek sessions this week if time gets tight again.`;
+  }
+
+  return verdict;
 }
 
 export function redsScreen(fuel, fit, weeks8) {
