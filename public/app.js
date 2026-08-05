@@ -522,6 +522,34 @@ function setupNotice() {
   );
 }
 
+// Plan notes can carry a `suggestedValue` (e.g. a projected-FTP figure) that
+// the planner already computed — surface it as a one-click adjustment instead
+// of making the user re-derive it and edit the goal by hand.
+function noticeWithAction(n, goalId) {
+  const children = [n.text];
+  if (n.suggestedValue != null && goalId) {
+    children.push(
+      ' ',
+      el('button.ghost', {
+        onclick: async (e) => {
+          e.target.disabled = true;
+          e.target.textContent = 'Updating…';
+          try {
+            await api(`/api/goals/${goalId}`, { method: 'PATCH', body: { target_value: n.suggestedValue } });
+            await api('/api/plan/regenerate', { method: 'POST', body: { goalId, reason: 'target adjusted from suggestion' } });
+            render();
+          } catch (err) {
+            alert(err.message);
+            e.target.disabled = false;
+            e.target.textContent = `Use ${n.suggestedValue}`;
+          }
+        },
+      }, `Use ${n.suggestedValue}`)
+    );
+  }
+  return el('div.notice', {}, ...children);
+}
+
 views['/plan'] = async () => {
   const [plan, weeks, fitness] = await Promise.all([
     api('/api/plan'),
@@ -555,7 +583,7 @@ views['/plan'] = async () => {
           )
         : null,
       params.demand ? el('p', { style: 'margin-top:12px' }, explainPlan(plan, params)) : null,
-      (p?.notes || []).map((n) => el('div.notice', {}, n.text))
+      (p?.notes || []).map((n) => noticeWithAction(n, plan.goal.id))
     )
   );
 
@@ -1019,12 +1047,8 @@ views['/goals'] = async () => {
             e.target.disabled = true;
             try {
               const body = Object.fromEntries(Object.entries(f).map(([k, node]) => [k, node.value]));
-              const res = await api('/api/goals', { method: 'POST', body });
+              await api('/api/goals', { method: 'POST', body });
               location.hash = '#/plan';
-              alert(
-                `Plan created: ${res.summary.weeks} weeks, peak CTL ${res.summary.targets.achievableCtl} (target ${res.summary.targets.targetCtl}).` +
-                  (res.summary.notes.length ? '\n\n' + res.summary.notes.map((n) => '• ' + n.text).join('\n\n') : '')
-              );
               render();
             } catch (err) {
               alert(err.message);
