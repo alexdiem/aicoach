@@ -379,10 +379,25 @@ test('plan and brief work fine with no daily-log data at all', async () => {
 test('base-phase key sessions vary week to week rather than repeating verbatim', async () => {
   const r = await planner.generatePlan(goalId, { reason: 'variety-check' });
   const base = r.weeks.filter((w) => w.phase === 'base1' || w.phase === 'base2' || w.phase === 'base3');
-  const distinctTempoOrSweetSpot = new Set(
-    base.map((w) => JSON.parse(w.key_sessions_json).find((s) => s.name === 'Tempo' || s.name === 'Sweet spot')?.detail)
+  const distinctSit = new Set(
+    base.map((w) => JSON.parse(w.key_sessions_json).find((s) => s.name === 'SIT')?.detail)
   );
-  assert.ok(distinctTempoOrSweetSpot.size > 1, 'expected more than one distinct quality-session variant across the base phase');
+  assert.ok(distinctSit.size > 1, 'expected more than one distinct quality-session variant across the base phase');
+});
+
+test('base-phase intensity is polarized: the quality session is SIT, not moderate-intensity tempo/sweet-spot', async () => {
+  const r = await planner.generatePlan(goalId, { reason: 'polarized-check' });
+  const base = r.weeks.filter((w) => w.phase === 'base1' || w.phase === 'base2' || w.phase === 'base3');
+  assert.ok(base.length > 0, 'expected some base-phase weeks');
+  for (const w of base) {
+    assert.ok(w.z3_4_pct <= 5, `base week Z3-4 was ${w.z3_4_pct}%, expected a near-empty gray zone`);
+    const sessions = JSON.parse(w.key_sessions_json);
+    assert.ok(sessions.some((s) => s.name === 'SIT'), 'expected a SIT session in the base phase');
+    assert.ok(!sessions.some((s) => s.name === 'Tempo' || s.name === 'Sweet spot'), 'moderate-intensity tempo/sweet-spot sessions should be gone');
+    const sit = sessions.find((s) => s.name === 'SIT');
+    assert.match(sit.detail, /all-out \(SIT\)/);
+    assert.match(sit.detail, /first half/);
+  }
 });
 
 test('TSB around -20 mid-block does not trigger a load-cutting warn, but the same TSB in taper does', async () => {

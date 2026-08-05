@@ -9,8 +9,14 @@ Two sources govern the plan, explicitly separated:
 - **Joe Friel (Training Bible)** governs *structure* — phase sequence, CTL/ATL/TSB-driven
   load progression, 3:1 loading blocks, specificity near the event, taper length scaled
   to event duration.
-- **Stacy Sims (female physiology)** governs fuelling around hard sessions and
-  low-energy-availability screening.
+- **Stacy Sims (ROAR)** governs the *shape of intensity* within that structure, plus
+  fuelling around hard sessions and low-energy-availability screening. Time above easy
+  is polarized, not pyramidal: the moderate-intensity "gray zone" (roughly 76–93% FTP —
+  tempo, sweet spot) is held near-empty at every phase rather than ramped up through base
+  the way a traditional model would. What replaces it is short, maximal sprint intervals
+  (SIT: 20–40s all-out) placed early in the ride while neuromuscular freshness is highest —
+  Sims is explicit that women respond poorly to chronic moderate-intensity volume; it
+  raises cortisol without the adaptive stimulus real hard efforts provide.
 
 Strength frequency is dosed against the athlete's own logged, sustained seasonal
 pattern (light in summer, heaviest in winter) rather than derived from either
@@ -228,6 +234,7 @@ against what's actually been sustained, not a Friel or Sims rule — recorded in
 | Decision | Winner | Why |
 | --- | --- | --- |
 | Fuelling around hard sessions, low-energy-availability screening | **Sims** | Friel doesn't model this. |
+| Shape of intensity within a week (polarized vs. pyramidal) | **Sims** | Friel's model is pyramidal — real time in the 76–93% FTP gray zone through base and build. Sims' polarized model holds that zone near-empty at every phase instead. |
 | Phase sequence, ramp rate, recovery weeks, taper length | **Friel** | The periodization structure itself. |
 
 ## Stack

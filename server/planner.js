@@ -6,6 +6,17 @@
 // load progression, 3:1 loading blocks, specificity near the event, taper length
 // scaled to event duration.
 //
+// Sims (ROAR) governs the *shape* of intensity within that structure: this is a
+// polarized model, not Friel's pyramidal one — see distributionFor below. Time
+// above easy stays almost entirely at the genuinely-hard end (short maximal
+// efforts, threshold, VO2) rather than spread into moderate-intensity "tempo" or
+// "sweet spot" work. Sims is explicit that women respond poorly to chronic
+// moderate-intensity volume — it raises cortisol without the adaptive stimulus
+// real hard efforts provide — so that gray zone (roughly 76–93% FTP) is deliberately
+// almost empty at every phase, not just tapered down in base like a pyramidal
+// model would. The one exception is build1's threshold work, which sits at/above
+// threshold (95–102% FTP) and counts as the hard pole, not the gray zone.
+//
 // Strength dosing follows the athlete's own logged seasonal pattern (see
 // seasonalStrengthSessions below) rather than a framework-derived rule —
 // calibrated directly against what she has actually sustained, not eyeballed.
@@ -84,26 +95,30 @@ export function durationClass(hours) {
 
 /**
  * Intensity distribution (% of weekly *time*) per phase, shaped by how long the
- * event is. Friel: specificity increases toward the event; an ultra's specific
- * work is duration at low intensity, a 1h target's is time above threshold.
+ * event is. Polarized (Sims/Seiler), not pyramidal: Z3-4 — the tempo/sweet-spot
+ * gray zone — is held near-minimal at every phase rather than ramping up through
+ * base like a traditional model. Time freed from it goes to genuinely easy Z1-2
+ * or genuinely hard Z5+, scaled toward Z5 as the event gets shorter/harder
+ * (an ultra's specificity is duration at low intensity; a 1h target's is time
+ * above threshold) and as the block approaches the event.
  */
 export function distributionFor(phase, cls) {
   const table = {
     sprint: {
-      prep: [90, 8, 2], base1: [85, 12, 3], base2: [82, 13, 5], base3: [78, 15, 7],
-      build1: [72, 18, 10], build2: [68, 19, 13], peak: [65, 22, 13], taper: [72, 16, 12], race: [80, 12, 8],
+      prep: [85, 5, 10], base1: [82, 4, 14], base2: [80, 3, 17], base3: [78, 3, 19],
+      build1: [76, 2, 22], build2: [74, 2, 24], peak: [73, 2, 25], taper: [78, 3, 19], race: [82, 4, 14],
     },
     middle: {
-      prep: [92, 7, 1], base1: [88, 10, 2], base2: [85, 12, 3], base3: [82, 14, 4],
-      build1: [78, 16, 6], build2: [75, 17, 8], peak: [73, 18, 9], taper: [78, 14, 8], race: [85, 10, 5],
+      prep: [88, 4, 8], base1: [85, 3, 12], base2: [83, 3, 14], base3: [81, 3, 16],
+      build1: [79, 2, 19], build2: [77, 2, 21], peak: [76, 2, 22], taper: [80, 3, 17], race: [85, 3, 12],
     },
     long: {
-      prep: [93, 6, 1], base1: [90, 8, 2], base2: [88, 10, 2], base3: [86, 11, 3],
-      build1: [84, 12, 4], build2: [82, 13, 5], peak: [82, 12, 6], taper: [84, 11, 5], race: [88, 8, 4],
+      prep: [90, 4, 6], base1: [87, 3, 10], base2: [85, 3, 12], base3: [83, 3, 14],
+      build1: [81, 2, 17], build2: [80, 2, 18], peak: [79, 2, 19], taper: [82, 3, 15], race: [88, 3, 9],
     },
     ultra: {
-      prep: [94, 5, 1], base1: [92, 7, 1], base2: [90, 8, 2], base3: [88, 9, 3],
-      build1: [86, 10, 4], build2: [85, 11, 4], peak: [85, 10, 5], taper: [86, 9, 5], race: [90, 7, 3],
+      prep: [92, 3, 5], base1: [89, 3, 8], base2: [88, 3, 9], base3: [87, 3, 10],
+      build1: [85, 2, 13], build2: [84, 2, 14], peak: [84, 2, 14], taper: [86, 3, 11], race: [90, 3, 7],
     },
   };
   const row = (table[cls] || table.middle)[phase] || (table[cls] || table.middle).base2;
@@ -229,29 +244,29 @@ function keySessions(phase, cls, goal, ctx) {
         `${longH}h Z2, steady effort throughout — focus on cadence (85–95) and fuelling rhythm`,
         `${longH}h Z2 with 3× 5 min at 95+ rpm worked in through the ride`,
       ][variant];
-      const tempo = [
-        `3× 15 min at 76–85% FTP${climbNote}, 5 min easy between`,
-        `4× 10 min at 78–88% FTP${climbNote}, 4 min easy between`,
-        `2× 20 min at 75–83% FTP${climbNote}, 8 min easy between`,
+      const sit = [
+        `6× 20 s all-out (SIT)${climbNote}, full 4 min recovery between — first half of the ride, while neuromuscular freshness is highest`,
+        `8× 20 s all-out (SIT)${climbNote}, full 4 min recovery between — first half of the ride`,
+        `6× 30 s all-out (SIT)${climbNote}, full 4–5 min recovery between — first half of the ride`,
       ][variant];
       s.push({ name: 'Long endurance', detail: endurance });
-      s.push({ name: 'Tempo', detail: tempo });
+      s.push({ name: 'SIT', detail: sit });
       s.push({ name: 'Strength', detail: `Max-strength: ${strengthX} lower-body, 4×4–6 at 80–85% 1RM + plyometrics` });
       break;
     }
     case 'base3': {
       const endurance = [
-        `${longH}h Z2 with 3× 20 min at 80–85% FTP in the last third`,
-        `${longH}h Z2 with a single 45 min block at 82–87% FTP mid-ride`,
-        `${longH}h Z2, progressive — last hour held at 80–85% FTP`,
+        `${longH}h Z2, negative-split the second half`,
+        `${longH}h Z2, steady effort throughout — focus on cadence (85–95) and fuelling rhythm`,
+        `${longH}h Z2 with 3× 5 min at 95+ rpm worked in through the ride`,
       ][variant];
-      const sweetSpot = [
-        `4× 12 min at 88–93% FTP${climbNote}`,
-        `3× 15 min at 90–95% FTP${climbNote}`,
-        `5× 9 min at 86–92% FTP${climbNote}, 1 min surge to 105% at the end of each rep`,
+      const sit = [
+        `8× 30 s all-out (SIT)${climbNote}, full 4 min recovery between — first half of the ride`,
+        `6× 40 s all-out (SIT)${climbNote}, full 4–5 min recovery between — first half of the ride`,
+        `10× 30 s all-out (SIT)${climbNote}, full 4 min recovery between — first half of the ride`,
       ][variant];
       s.push({ name: 'Long endurance', detail: endurance });
-      s.push({ name: 'Sweet spot', detail: sweetSpot });
+      s.push({ name: 'SIT', detail: sit });
       s.push({ name: 'Strength', detail: `Max-strength: ${strengthX} lower-body, 4×4–6 at 85% 1RM + plyometrics` });
       break;
     }
@@ -587,9 +602,9 @@ function focusFor(phase, cls) {
   const longEvent = cls === 'ultra' || cls === 'long';
   const map = {
     prep: "General preparation. Before we load anything specific, we want consistency: getting the aerobic engine ticking over regularly, cleaning up cadence and pedalling technique, and building the habit of fuelling on the bike. Nothing here is hard by design — the whole point of this block is to arrive at base training already durable, so the real load doesn't have to double as an adaptation to just showing up.",
-    base1: "Early aerobic base. This is where your season's fitness actually gets built — everything after this block is spending what gets deposited here. The work is deliberately unglamorous: duration at Z2, cadence work, and dialling in fuelling and hydration habits you'll lean on later. Strength work starts in earnest now too, while volume is still low enough to recover from it properly.",
-    base2: "Aerobic base, extending. Same intent as the last block — build the engine — but the tempo work lengthens and the long ride grows, so you're teaching your body to hold a steady, moderate effort for longer without the aerobic system drifting. This is also usually where fuelling strategy for the event starts getting tested for real, not just practiced.",
-    base3: "Late base. Sweet-spot work appears here because your aerobic foundation is solid enough now to load sub-threshold work on top of it without digging a hole you can't climb out of. Your longest rides step up close to what the build phase will demand — this is the bridge between \"building the engine\" and \"specific preparation, quality endurance\" starts here.",
+    base1: "Early aerobic base. This is where your season's fitness actually gets built — everything after this block is spending what gets deposited here. The work is deliberately polarized: long rides stay genuinely easy, and the week's one dose of intensity is short, maximal sprint efforts (SIT) early in the ride while neuromuscular freshness is highest — not moderate tempo. Sims is explicit that chronic time in that moderate gray zone raises cortisol without buying the adaptation real hard efforts do, so it's held near-empty by design, not just light. Strength work starts in earnest now too, while volume is still low enough to recover from it properly.",
+    base2: "Aerobic base, extending. Same intent as the last block — build the engine — but the long ride grows and the SIT session picks up a rep or two. Still no tempo, still no sweet spot: easy stays easy, hard stays genuinely hard, and nothing gets parked in between. This is also usually where fuelling strategy for the event starts getting tested for real, not just practiced.",
+    base3: "Late base. The SIT efforts get longer now (30–40 s, still maximal, still early in the ride) because your aerobic foundation is solid enough to absorb more top-end work without digging a hole you can't climb out of. Your longest rides step up close to what the build phase will demand — this is the bridge between \"building the engine\" and the threshold work build1 introduces.",
     build1: `Early build. The emphasis shifts from volume to specificity: threshold intervals${longEvent ? '' : ' start doing real work'}, and your long day starts looking like the event itself rather than just a big aerobic ride. ${longEvent ? "For an event this long, the specific work IS the duration and repeated days, not more intervals — time on feet, fuelling at race rate, and getting comfortable being uncomfortable for a long time matter more here than another hard interval set." : 'This is where fitness starts converting into race-specific capability rather than just raw aerobic volume.'}`,
     build2: `Peak build. This is the highest-load, highest-specificity block before you sharpen — ${longEvent ? 'back-to-back long days with full event kit and fuelling, rehearsing exactly what race day will ask of you' : 'VO2 work layered on top of race-pace blocks, run at full event fuelling'}. Expect to be tired here; that's the block doing its job, not a sign something's wrong, provided Form doesn't fall through the floor (that's what the weekly checks are for).`,
     peak: "Peak / specificity. Volume comes down, but intensity and specificity go up — this is dress-rehearsal territory: event kit, event fuelling, event position, on courses or efforts that mimic race day as closely as practical. The legs should start feeling sharper, not just less tired; if they don't, that's exactly the kind of thing the weekly brief should be flagging.",
