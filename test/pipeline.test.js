@@ -180,7 +180,9 @@ test('target_metric/target_value are checked against the plan\'s projected fitne
     .run(addDays(TODAY, 7 * 16), TODAY, new Date().toISOString());
   const farGoalId = Number(farInfo.lastInsertRowid);
   const far = await planner.generatePlan(farGoalId, { reason: 'test-target' });
-  assert.ok(far.notes.some((n) => n.type === 'target-gap' && /400W/.test(n.text)));
+  const farNote = far.notes.find((n) => n.type === 'target-gap' && /400W/.test(n.text));
+  assert.ok(farNote);
+  assert.ok(farNote.suggestedValue > 0 && farNote.suggestedValue < 400);
 
   // A target well below current FTP: always reachable regardless of this
   // plan's exact CTL trajectory, so this must never read as a gap.
@@ -193,8 +195,12 @@ test('target_metric/target_value are checked against the plan\'s projected fitne
     .run(addDays(TODAY, 7 * 16), TODAY, new Date().toISOString());
   const nearGoalId = Number(nearInfo.lastInsertRowid);
   const near = await planner.generatePlan(nearGoalId, { reason: 'test-target' });
-  assert.ok(near.notes.some((n) => n.type === 'target-on-track'));
+  const nearNote = near.notes.find((n) => n.type === 'target-on-track');
+  assert.ok(nearNote);
   assert.ok(!near.notes.some((n) => n.type === 'target-gap'));
+  // Well below projected fitness: the note should offer the projected value
+  // as a more ambitious target, not just say "reachable" and stop there.
+  assert.ok(nearNote.suggestedValue > 200);
 
   // A metric the planner has no model for: surfaced as unchecked, not silently dropped.
   const paceInfo = await db

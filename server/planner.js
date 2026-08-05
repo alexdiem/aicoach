@@ -563,6 +563,14 @@ function checkTargetMetric(goal, athlete, startCtl, achievableCtl) {
       return {
         type: 'target-gap',
         text: `Target ${metric} is ${value}W. Current FTP is ${athlete.ftp}W; the fitness this plan builds (CTL ${round(startCtl, 0)} → ${achievableCtl}) projects to roughly ${projectedFtp}W by race week — ${round(gap, 0)}W short of target. FTP gains need dedicated threshold/VO2 work and time; check this again mid-plan against a real test, not this estimate.`,
+        suggestedValue: projectedFtp,
+      };
+    }
+    if (gap < -5) {
+      return {
+        type: 'target-on-track',
+        text: `Target ${metric} of ${value}W looks conservative: current FTP ${athlete.ftp}W projects to roughly ${projectedFtp}W by race week given this plan's fitness build — you could set a more ambitious target of about ${projectedFtp}W.`,
+        suggestedValue: projectedFtp,
       };
     }
     return {
