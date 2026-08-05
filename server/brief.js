@@ -354,12 +354,15 @@ async function applyAdjustment(weekRow, adj) {
   if (intensityRemoved) {
     const strength = sessions.find((s) => s.name === 'Strength');
     const fuelling = sessions.find((s) => s.name.startsWith('Fuelling'));
+    // The quality session is always SIT (mapped to Z5), never a moderate-intensity
+    // tempo/sweet-spot session — this model doesn't schedule one, so there's no
+    // "touch" of it to keep on a reduced week. Z5 is fully zeroed by every
+    // adjustment that reaches this branch; any residual Z3-4 is incidental, not
+    // a session worth naming.
     sessions = [
       { name: 'Long endurance', detail: `${longH}h steady, all of it below LT1 — the aerobic stimulus you can still absorb at TSB ${signed(adj.tsb)}.` },
       { name: 'Easy rides', detail: `Fill the remaining ${round(Math.max(0, hours - longH), 1)}h in 60–90 min pieces at conversational pace. Frequency preserved, intensity removed.` },
-      z34 > 0
-        ? { name: 'One tempo touch', detail: `At most ${round((z34 / 100) * hours * 60, 0)} min total at 76–85% FTP, and only if it feels easy that day.` }
-        : { name: 'No intervals', detail: `Z3-4 and Z5 allocations are 0% this week; every planned interval session is postponed, not compressed into fewer days.` },
+      { name: 'No intervals', detail: `Z5 allocation is 0% this week — the SIT session is postponed, not compressed into fewer days or swapped for something moderate instead.` },
       strength || { name: 'Strength', detail: 'Keep the scheduled sessions — load held, volume halved.' },
       fuelling,
     ].filter(Boolean);
