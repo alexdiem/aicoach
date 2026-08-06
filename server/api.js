@@ -177,8 +177,23 @@ export const routes = {
     return db.prepare('SELECT * FROM goals WHERE id = ?').get(id);
   },
 
+  // Explicit cascade rather than relying on the schema's ON DELETE CASCADE:
+  // the Turso driver doesn't turn PRAGMA foreign_keys on, so that constraint
+  // is only enforced on the local sqlite path (see dbdriver.js).
   'DELETE /api/goals/:id': async ({ params }) => {
-    await db.prepare('DELETE FROM goals WHERE id = ?').run(parseInt(params.id, 10));
+    const id = parseInt(params.id, 10);
+    const goal = await db.prepare('SELECT * FROM goals WHERE id = ?').get(id);
+    if (!goal) throw httpError(404, 'goal not found');
+    await dbTransaction(async (tx) => {
+      const plans = await tx.all('SELECT id FROM plans WHERE goal_id = ?', [id]);
+      for (const p of plans) {
+        await tx.run('UPDATE briefs SET plan_id = NULL WHERE plan_id = ?', [p.id]);
+        await tx.run('DELETE FROM plan_weeks WHERE plan_id = ?', [p.id]);
+      }
+      await tx.run('DELETE FROM plans WHERE goal_id = ?', [id]);
+      await tx.run('UPDATE briefs SET goal_id = NULL WHERE goal_id = ?', [id]);
+      await tx.run('DELETE FROM goals WHERE id = ?', [id]);
+    });
     return { deleted: true };
   },
 
