@@ -17,11 +17,12 @@
 // model would. The one exception is build1's threshold work, which sits at/above
 // threshold (95–102% FTP) and counts as the hard pole, not the gray zone.
 //
-// Strength dosing follows the athlete's own logged seasonal pattern (see
-// seasonalStrengthSessions below) rather than a framework-derived rule —
-// calibrated directly against what she has actually sustained, not eyeballed.
-// Each override is recorded in plan_weeks.governing_json with the reason
-// given — nothing is silently averaged.
+// Strength frequency follows the athlete's current, self-reported weekly
+// count (Settings → Planning → Strength sessions/week) rather than a
+// framework-derived or calendar-based rule — held constant across every
+// phase of the plan except taper/race, where it's cut for recovery. Each
+// override is recorded in plan_weeks.governing_json with the reason given —
+// nothing is silently averaged.
 
 import { db, dbTransaction, getSetting, getSettingNum, getAthlete } from './db.js';
 import { addDays, clamp, daysBetween, isoDate, mean, round, today, weekStart } from './util.js';
@@ -200,25 +201,6 @@ export function allocatePhases(totalWeeks, eventHours, startCtl, targetCtl) {
   return seq.slice(0, W);
 }
 
-// --- strength dosing ---------------------------------------------------------
-
-/**
- * Strength frequency by calendar month, not training phase — this is the
- * athlete's own logged, sustained pattern (light in summer, heaviest in
- * winter), not a framework-derived rule.
- */
-export function seasonalStrengthSessions(dateStr) {
-  const month = Number(dateStr.slice(5, 7));
-  if (month >= 6 && month <= 8) return 1; // summer: Jun-Aug
-  if (month === 12 || month <= 2) return 3; // winter: Dec-Feb
-  return 2; // spring/autumn: Mar-May, Sep-Nov
-}
-
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
 // --- key sessions -----------------------------------------------------------
 
 function keySessions(phase, cls, goal, ctx) {
@@ -341,6 +323,7 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
   const loadPattern = (await getSetting('load_pattern', '3:1')) === '2:1' ? 2 : 3;
   let maxRampBase = await getSettingNum('max_ramp_base', 6);
   let maxRampBuild = await getSettingNum('max_ramp_build', 4);
+  const currentStrength = Math.max(0, await getSettingNum('strength_sessions_per_week', 2));
   const notes = [];
 
   if (adapt.underRecovery) {
@@ -432,24 +415,24 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
       targetTss = Math.max(targetTss, round(ctl * 7 * 0.8, 0));
     }
 
-    // Strength: dosed by calendar month against the athlete's own logged
-    // seasonal pattern, not by training phase.
+    // Strength: held at the athlete's current self-reported weekly frequency
+    // (Settings) across every phase, cut only for taper/race recovery.
     let strength;
     if (phase === 'race') {
       strength = 0;
     } else if (phase === 'taper') {
-      strength = 1;
+      strength = currentStrength > 0 ? 1 : 0;
       governing.push({
         decision: 'strength frequency',
         framework: 'Personal',
-        reason: 'Taper: cut to 1×/wk regardless of season.',
+        reason: `Taper: cut from ${currentStrength}×/wk to ${strength}×/wk for recovery.`,
       });
     } else {
-      strength = seasonalStrengthSessions(ws);
+      strength = currentStrength;
       governing.push({
         decision: 'strength frequency',
         framework: 'Personal',
-        reason: `${strength}×/wk for ${MONTH_NAMES[Number(ws.slice(5, 7)) - 1]} — logged seasonal pattern (1×/wk Jun-Aug, 2×/wk Mar-May & Sep-Nov, 3×/wk Dec-Feb), not tied to training phase.`,
+        reason: `${strength}×/wk — current strength training frequency set in Settings, held constant through every training phase rather than following a seasonal or phase-based rule.`,
       });
     }
 

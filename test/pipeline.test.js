@@ -138,10 +138,11 @@ test('plan generation produces a periodized, ramping, recovery-punctuated plan',
   const peak = result.weeks.find((w) => w.phase === 'peak');
   assert.ok(peak.z1_2_pct >= 80, `peak Z1-2 was ${peak.z1_2_pct}%`);
 
-  // Strength dosing follows the athlete's own logged seasonal pattern (a
-  // Personal calibration, not a Friel or Sims rule), not training phase.
+  // Strength dosing follows the athlete's current self-reported weekly
+  // frequency (a Personal calibration, not a Friel or Sims rule), held
+  // constant across every phase rather than varying by calendar season.
   for (const w of result.weeks.filter((w) => !['taper', 'race'].includes(w.phase))) {
-    assert.equal(w.strength_sessions, planner.seasonalStrengthSessions(w.start_date));
+    assert.equal(w.strength_sessions, 2); // default strength_sessions_per_week
     const gov = JSON.parse(w.governing_json);
     assert.ok(gov.some((g) => g.decision === 'strength frequency' && g.framework === 'Personal'));
   }
@@ -167,6 +168,27 @@ test('regeneration preserves past weeks and bumps the version', async () => {
   // Only one active plan at a time.
   const count = await db.prepare('SELECT COUNT(*) c FROM plans WHERE goal_id = ? AND active = 1').get(goalId);
   assert.equal(count.c, 1);
+});
+
+test('strength_sessions_per_week setting drives frequency at every stage, not calendar month', async () => {
+  await setSetting('strength_sessions_per_week', '4');
+  const result = await planner.generatePlan(goalId, { reason: 'test-strength-setting' });
+  for (const w of result.weeks.filter((w) => !['taper', 'race'].includes(w.phase))) {
+    assert.equal(w.strength_sessions, 4);
+  }
+  const taperWeeks = result.weeks.filter((w) => w.phase === 'taper');
+  assert.ok(taperWeeks.length > 0);
+  for (const w of taperWeeks) assert.equal(w.strength_sessions, 1);
+
+  // A user who currently does no strength work gets none prescribed anywhere,
+  // including taper — there's nothing to cut down to.
+  await setSetting('strength_sessions_per_week', '0');
+  const noStrength = await planner.generatePlan(goalId, { reason: 'test-strength-setting-zero' });
+  for (const w of noStrength.weeks.filter((w) => w.phase !== 'race')) {
+    assert.equal(w.strength_sessions, 0);
+  }
+
+  await setSetting('strength_sessions_per_week', '2'); // restore default for subsequent tests
 });
 
 test('target_metric/target_value are checked against the plan\'s projected fitness', async () => {
