@@ -675,43 +675,186 @@ views['/plan'] = async () => {
   table.append(tb);
   root.append(el('div.card', {}, el('h3', {}, 'Weeks'), el('p.muted', {}, 'Click a week for its key sessions and framework calls.'), el('div.chart-wrap', {}, table)));
   root.append(el('div', { id: 'week-detail' }, cur ? weekDetail(cur) : null));
+  if (plan.versions?.length) root.append(planHistoryCard(plan.versions));
   return root;
 };
 
-function weekDetail(w) {
+/** Version history for this goal's plan — lets old, inactive versions be deleted. */
+function planHistoryCard(versions) {
+  const t = el('table.data');
+  t.append(el('thead', {}, el('tr', {}, ['Version', 'Generated', 'Reason', 'Status', ''].map((h) => el('th', {}, h)))));
+  const tb = el('tbody');
+  for (const v of versions) {
+    const delBtn = v.active
+      ? null
+      : el('button.ghost', {
+          onclick: async (e) => {
+            if (!confirm(`Delete plan v${v.version}? Its weeks are removed permanently.`)) return;
+            e.target.disabled = true;
+            try {
+              await api(`/api/plan/${v.id}`, { method: 'DELETE' });
+              render();
+            } catch (err) {
+              alert(err.message);
+              e.target.disabled = false;
+            }
+          },
+        }, 'Delete');
+    tb.append(
+      el(
+        'tr',
+        {},
+        el('td', {}, `v${v.version}`),
+        el('td', {}, v.generated_at ? v.generated_at.slice(0, 16).replace('T', ' ') : '—'),
+        el('td', {}, v.reason || '—'),
+        el('td', {}, v.active ? el('span.pill', {}, 'active') : 'inactive'),
+        el('td', {}, delBtn)
+      )
+    );
+  }
+  t.append(tb);
   return el(
     'div.card',
     {},
-    el('h3', {}, `Week of ${w.start_date} — ${w.phase}${w.is_recovery ? ' (recovery)' : ''}`),
-    el('p', {}, w.focus || ''),
-    w.notes ? el('p.muted', {}, w.notes) : null,
-    el(
-      'ul',
-      {},
-      (w.key_sessions || []).map((k) => el('li', {}, el('strong', {}, k.name), ' — ', k.detail))
-    ),
-    (w.governing || []).length
-      ? el(
+    el('h3', {}, 'Plan history'),
+    el('p.muted', {}, 'Older versions are kept for reference. Delete the ones you no longer need — the active version can\'t be deleted.'),
+    el('div.chart-wrap', {}, t)
+  );
+}
+
+/** Displays a plan week, with an inline "Edit" mode that PATCHes the week in place. */
+function weekDetail(w) {
+  const container = el('div');
+
+  function showView() {
+    container.replaceChildren(
+      el(
+        'div.card',
+        {},
+        el(
           'div',
+          { style: 'display:flex;justify-content:space-between;align-items:flex-start;gap:12px' },
+          el('h3', { style: 'margin:0' }, `Week of ${w.start_date} — ${w.phase}${w.is_recovery ? ' (recovery)' : ''}`),
+          el('button.ghost', { onclick: showEdit }, 'Edit')
+        ),
+        el('p', {}, w.focus || ''),
+        w.notes ? el('p.muted', {}, w.notes) : null,
+        el(
+          'ul',
           {},
-          el('h3', {}, 'Framework calls'),
-          (w.governing || []).map((g) =>
-            el(
-              'div.flag.info',
+          (w.key_sessions || []).map((k) => el('li', {}, el('strong', {}, k.name), ' — ', k.detail))
+        ),
+        (w.governing || []).length
+          ? el(
+              'div',
               {},
-              el('span.icon', {}, '⚖️'),
-              el(
-                'div',
-                {},
-                el('div.title', {}, `${g.decision} → ${g.framework}`),
-                el('div', {}, g.reason),
-                g.alternative ? el('div.fw', {}, `Not taken: ${g.alternative}`) : null
+              el('h3', {}, 'Framework calls'),
+              (w.governing || []).map((g) =>
+                el(
+                  'div.flag.info',
+                  {},
+                  el('span.icon', {}, '⚖️'),
+                  el(
+                    'div',
+                    {},
+                    el('div.title', {}, `${g.decision} → ${g.framework}`),
+                    el('div', {}, g.reason),
+                    g.alternative ? el('div.fw', {}, `Not taken: ${g.alternative}`) : null
+                  )
+                )
               )
             )
-          )
-        )
-      : null
-  );
+          : null
+      )
+    );
+  }
+
+  function showEdit() {
+    const f = {
+      target_tss: el('input', { type: 'number', step: '1', value: w.target_tss ?? '' }),
+      target_hours: el('input', { type: 'number', step: '0.1', value: w.target_hours ?? '' }),
+      long_session_h: el('input', { type: 'number', step: '0.1', value: w.long_session_h ?? '' }),
+      strength_sessions: el('input', { type: 'number', step: '1', value: w.strength_sessions ?? '' }),
+      z1_2_pct: el('input', { type: 'number', step: '1', value: w.z1_2_pct ?? '' }),
+      z3_4_pct: el('input', { type: 'number', step: '1', value: w.z3_4_pct ?? '' }),
+      z5_pct: el('input', { type: 'number', step: '1', value: w.z5_pct ?? '' }),
+      focus: el('textarea', {}, w.focus || ''),
+      notes: el('textarea', {}, w.notes || ''),
+    };
+
+    const sessionsWrap = el('div', { style: 'margin-top:4px' });
+    const sessionRows = [];
+    function addSessionRow(s) {
+      const nameInput = el('input', { type: 'text', placeholder: 'Session name', value: (s && s.name) || '', style: 'flex:0 0 170px' });
+      const detailInput = el('input', { type: 'text', placeholder: 'Detail', value: (s && s.detail) || '', style: 'flex:1 1 300px' });
+      const removeBtn = el('button.ghost', {
+        onclick: (e) => { e.preventDefault(); row.remove(); sessionRows.splice(sessionRows.indexOf(entry), 1); },
+      }, 'Remove');
+      const row = el('div.row.tight', { style: 'margin-bottom:6px' }, nameInput, detailInput, removeBtn);
+      const entry = { nameInput, detailInput };
+      sessionRows.push(entry);
+      sessionsWrap.append(row);
+    }
+    (w.key_sessions && w.key_sessions.length ? w.key_sessions : [{ name: '', detail: '' }]).forEach(addSessionRow);
+    const addSessionBtn = el('button.ghost', { onclick: (e) => { e.preventDefault(); addSessionRow(); } }, 'Add session');
+
+    const saveBtn = el('button', {
+      onclick: async (e) => {
+        e.preventDefault();
+        e.target.disabled = true;
+        try {
+          const key_sessions = sessionRows
+            .map((r) => ({ name: r.nameInput.value.trim(), detail: r.detailInput.value.trim() }))
+            .filter((s) => s.name || s.detail);
+          const updated = await api(`/api/plan/weeks/${w.id}`, {
+            method: 'PATCH',
+            body: {
+              target_tss: f.target_tss.value, target_hours: f.target_hours.value,
+              long_session_h: f.long_session_h.value, strength_sessions: f.strength_sessions.value,
+              z1_2_pct: f.z1_2_pct.value, z3_4_pct: f.z3_4_pct.value, z5_pct: f.z5_pct.value,
+              focus: f.focus.value, notes: f.notes.value, key_sessions,
+            },
+          });
+          Object.assign(w, updated);
+          showView();
+        } catch (err) {
+          alert(err.message);
+          e.target.disabled = false;
+        }
+      },
+    }, 'Save');
+    const cancelBtn = el('button.ghost', { onclick: (e) => { e.preventDefault(); showView(); } }, 'Cancel');
+
+    container.replaceChildren(
+      el(
+        'div.card',
+        {},
+        el('h3', { style: 'margin-top:0' }, `Editing week of ${w.start_date} — ${w.phase}${w.is_recovery ? ' (recovery)' : ''}`),
+        el(
+          'div.row',
+          {},
+          el('div', {}, el('label', {}, 'Target TSS'), f.target_tss),
+          el('div', {}, el('label', {}, 'Target hours'), f.target_hours),
+          el('div', {}, el('label', {}, 'Long session (h)'), f.long_session_h),
+          el('div', {}, el('label', {}, 'Strength sessions'), f.strength_sessions)
+        ),
+        el(
+          'div.row',
+          {},
+          el('div', {}, el('label', {}, 'Z1-2 %'), f.z1_2_pct),
+          el('div', {}, el('label', {}, 'Z3-4 %'), f.z3_4_pct),
+          el('div', {}, el('label', {}, 'Z5 %'), f.z5_pct)
+        ),
+        el('div', { style: 'margin-top:8px' }, el('label', {}, 'Focus'), f.focus),
+        el('div', { style: 'margin-top:8px' }, el('label', {}, 'Notes'), f.notes),
+        el('div', { style: 'margin-top:10px' }, el('label', {}, 'Key sessions'), sessionsWrap, addSessionBtn),
+        el('div.row.tight', { style: 'margin-top:12px' }, saveBtn, cancelBtn)
+      )
+    );
+  }
+
+  showView();
+  return container;
 }
 
 views['/log'] = async () => {

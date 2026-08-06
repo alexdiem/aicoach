@@ -1,7 +1,7 @@
 // JSON API. Route table is a flat map of "METHOD /path" → handler.
 // Path segments starting with ":" are captured into `params`.
 
-import { db, allSettings, setSetting, getAthlete, upsertAthlete, getSetting, activeJobFailures } from './db.js';
+import { db, dbTransaction, allSettings, setSetting, getAthlete, upsertAthlete, getSetting, activeJobFailures } from './db.js';
 import { addDays, isoDate, round, today, weekStart } from './util.js';
 import { syncFromIntervals, lastSync } from './sync.js';
 import { testConnection } from './intervals.js';
@@ -234,6 +234,50 @@ export const routes = {
   },
 
   'GET /api/plan/adaptation': async () => adaptationInputs(),
+
+  'PATCH /api/plan/weeks/:id': async ({ params, body }) => {
+    const id = parseInt(params.id, 10);
+    const cur = await db.prepare('SELECT * FROM plan_weeks WHERE id = ?').get(id);
+    if (!cur) throw httpError(404, 'plan week not found');
+
+    const numFields = ['target_tss', 'target_hours', 'z1_2_pct', 'z3_4_pct', 'z5_pct', 'long_session_h', 'strength_sessions'];
+    const textFields = ['focus', 'notes'];
+    const sets = [];
+    const vals = [];
+    for (const f of numFields) {
+      if (body && f in body) { sets.push(`${f} = ?`); vals.push(numOrNull(body[f])); }
+    }
+    for (const f of textFields) {
+      if (body && f in body) { sets.push(`${f} = ?`); vals.push(body[f] === '' ? null : body[f]); }
+    }
+    if (body && 'key_sessions' in body) {
+      const sessions = Array.isArray(body.key_sessions)
+        ? body.key_sessions.filter((s) => s && (s.name || s.detail)).map((s) => ({ name: s.name || '', detail: s.detail || '' }))
+        : [];
+      sets.push('key_sessions_json = ?');
+      vals.push(JSON.stringify(sessions));
+    }
+    if (sets.length) {
+      await db.prepare(`UPDATE plan_weeks SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
+    }
+    const updated = await db.prepare('SELECT * FROM plan_weeks WHERE id = ?').get(id);
+    return { ...updated, key_sessions: safeJson(updated.key_sessions_json) || [], governing: safeJson(updated.governing_json) || [] };
+  },
+
+  // A plan version can only be deleted once it's no longer the active one —
+  // regenerate (or restore a different version) first to replace it.
+  'DELETE /api/plan/:id': async ({ params }) => {
+    const id = parseInt(params.id, 10);
+    const plan = await db.prepare('SELECT * FROM plans WHERE id = ?').get(id);
+    if (!plan) throw httpError(404, 'plan not found');
+    if (plan.active) throw httpError(400, "can't delete the active plan version — regenerate first to replace it");
+    await dbTransaction(async (tx) => {
+      await tx.run('UPDATE briefs SET plan_id = NULL WHERE plan_id = ?', [id]);
+      await tx.run('DELETE FROM plan_weeks WHERE plan_id = ?', [id]);
+      await tx.run('DELETE FROM plans WHERE id = ?', [id]);
+    });
+    return { deleted: true };
+  },
 
   // --- briefs --------------------------------------------------------------
   'GET /api/brief': async ({ query }) => {
