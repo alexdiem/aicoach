@@ -410,6 +410,7 @@ const DEFAULTS = {
   load_pattern: '3:1',
   max_ramp_base: '6',
   max_ramp_build: '4',
+  strength_sessions_per_week: '2',
 };
 
 export async function getSetting(key, fallback = null) {

@@ -1435,6 +1435,7 @@ views['/settings'] = async () => {
     max_ramp_base: el('input', { type: 'number', step: '0.5', value: s.max_ramp_base }),
     max_ramp_build: el('input', { type: 'number', step: '0.5', value: s.max_ramp_build }),
     max_weekly_hours: el('input', { type: 'number', step: '0.5', value: s.max_weekly_hours ?? '' }),
+    strength_sessions_per_week: el('input', { type: 'number', step: '1', min: '0', value: s.strength_sessions_per_week }),
     high_if_threshold: el('input', { type: 'number', step: '0.01', value: s.high_if_threshold }),
     auto_sync_hours: el('input', { type: 'number', step: '1', value: s.auto_sync_hours }),
     sync_days_back: el('input', { type: 'number', step: '10', value: s.sync_days_back }),
@@ -1454,7 +1455,8 @@ views['/settings'] = async () => {
         el('div', {}, el('label', {}, 'Loading pattern'), opts.load_pattern),
         el('div', {}, el('label', {}, 'Max ramp, base (CTL/wk)'), opts.max_ramp_base),
         el('div', {}, el('label', {}, 'Max ramp, build'), opts.max_ramp_build),
-        el('div', {}, el('label', {}, 'Max weekly hours'), opts.max_weekly_hours)
+        el('div', {}, el('label', {}, 'Max weekly hours'), opts.max_weekly_hours),
+        el('div', {}, el('label', {}, 'Strength sessions/week (current)'), opts.strength_sessions_per_week)
       ),
       el(
         'div.row',

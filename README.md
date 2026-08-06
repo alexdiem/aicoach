@@ -18,12 +18,13 @@ Two sources govern the plan, explicitly separated:
   Sims is explicit that women respond poorly to chronic moderate-intensity volume; it
   raises cortisol without the adaptive stimulus real hard efforts provide.
 
-Strength frequency is dosed against the athlete's own logged, sustained seasonal
-pattern (light in summer, heaviest in winter) rather than derived from either
-framework — calibrated against what has actually proven sustainable, not eyeballed.
+Strength frequency is set directly by the athlete (Settings → Planning → Strength
+sessions/week) rather than derived from either framework, and is held constant
+across every stage of the plan — the plan takes what you're currently doing as
+the baseline instead of guessing at it.
 
 Nothing is averaged. Every divergent decision is stored with the framework (or
-"Personal", for the seasonal strength calibration) that won, the reason, and the
+"Personal", for the strength frequency setting) that won, the reason, and the
 alternative that was not taken, and it shows up in the UI under "Framework calls".
 
 ## Quick start
@@ -223,11 +224,13 @@ without it**, and the app never asks you to log anything.
 
 ### Strength dosing
 
-Strength frequency follows a fixed seasonal calendar rather than training phase:
-1×/wk June–August, 2×/wk March–May and September–November, 3×/wk December–February,
-cut to 1×/wk in taper and dropped in race week. This is a personal calibration
-against what's actually been sustained, not a Friel or Sims rule — recorded in
-"Framework calls" as `Personal`.
+Strength frequency is set in Settings → Planning → "Strength sessions/week" — the
+number of strength sessions the athlete is currently doing — and the plan holds
+that frequency constant through every phase (only the type of strength work
+changes by phase: anatomical adaptation in prep, max-strength in base, power in
+build2, and so on). It's cut to 1×/wk in taper (0 if the setting is already 0)
+and dropped entirely in race week. This is a personal calibration, not a Friel or
+Sims rule — recorded in "Framework calls" as `Personal`.
 
 ### Where Friel and Sims diverge
 
@@ -252,7 +255,7 @@ server/
   intervals.js      intervals.icu API client
   sync.js           ingestion, normalisation, #tag parsing
   metrics.js        CTL/ATL/TSB, EF trend, VI drift, W'bal, distribution, compliance
-  planner.js        event demand model, phase allocation, load ramp, seasonal strength dosing
+  planner.js        event demand model, phase allocation, load ramp, strength dosing
   brief.js          the weekly rule engine and its markdown output
   backpain.js       position/pain cross-tabs
   api.js            JSON routes (the route table itself)
