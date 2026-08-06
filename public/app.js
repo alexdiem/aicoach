@@ -522,6 +522,43 @@ function setupNotice() {
   );
 }
 
+// A goal with no target_metric/target_value never gets a reachability note in
+// the first place (checkTargetMetric stays silent without one) — and until
+// now there was no way to add one after creation, since the "Use {value}"
+// button on a note only appears once a target already exists. This is the
+// only entry point for that first target.
+function missingTargetPrompt(goal) {
+  if (goal.target_metric) return null;
+  const metric = el('input', { type: 'text', placeholder: 'ftp', style: 'width:100px' });
+  const value = el('input', { type: 'number', placeholder: '260', style: 'width:100px' });
+  const out = el('span.muted', {});
+  return el(
+    'div.notice',
+    {},
+    'No target set for this goal — add one to get a reachability check against the fitness this plan builds. ',
+    el('span', { style: 'display:inline-flex;gap:6px;align-items:center;margin-top:6px' },
+      metric, value,
+      el('button.ghost', {
+        onclick: async (e) => {
+          if (!metric.value || !value.value) { out.textContent = 'metric and value both required'; return; }
+          e.target.disabled = true;
+          e.target.textContent = 'Setting…';
+          try {
+            await api(`/api/goals/${goal.id}`, { method: 'PATCH', body: { target_metric: metric.value, target_value: value.value } });
+            await api('/api/plan/regenerate', { method: 'POST', body: { goalId: goal.id, reason: 'target added' } });
+            render();
+          } catch (err) {
+            out.textContent = err.message;
+            e.target.disabled = false;
+            e.target.textContent = 'Set target';
+          }
+        },
+      }, 'Set target'),
+      out
+    )
+  );
+}
+
 // Plan notes can carry a `suggestedValue` (e.g. a projected-FTP figure) that
 // the planner already computed — surface it as a one-click adjustment instead
 // of making the user re-derive it and edit the goal by hand.
@@ -586,6 +623,8 @@ views['/plan'] = async () => {
       (p?.notes || []).map((n) => noticeWithAction(n, plan.goal.id))
     )
   );
+  const targetPrompt = missingTargetPrompt(plan.goal);
+  if (targetPrompt) root.append(targetPrompt);
 
   root.append(el('div.card', {}, el('h3', {}, 'Fitness'), fitnessChart(fitness)));
   root.append(el('div.card', {}, el('h3', {}, 'Planned vs actual weekly TSS'), plannedActualChart(weeks)));
@@ -1037,6 +1076,11 @@ views['/goals'] = async () => {
       el('div.row', {}, el('div', {}, el('label', {}, 'Event date'), f.event_date), el('div', {}, el('label', {}, 'Plan starts'), f.start_date), el('div', {}, el('label', {}, 'Support'), f.support)),
       el('div.row', {}, el('div', {}, el('label', {}, 'Distance (km)'), f.distance_km), el('div', {}, el('label', {}, 'Climbing (m)'), f.elevation_m), el('div', {}, el('label', {}, 'Duration override (h)'), f.est_duration_h)),
       el('div.row', {}, el('div', {}, el('label', {}, 'Target metric'), f.target_metric), el('div', {}, el('label', {}, 'Target value'), f.target_value)),
+      el(
+        'p.muted',
+        { style: 'margin-top:4px' },
+        'Optional, and separate from "Type" above — set both to have the plan check whether this target is reachable given the fitness it builds (currently checked for ftp/power). Works for either goal type; leave blank for no check.'
+      ),
       el('div', { style: 'margin-top:8px' }, el('label', {}, 'Notes'), f.notes),
       preview,
       el(
