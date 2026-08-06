@@ -1171,26 +1171,47 @@ views['/pain'] = async () => {
   return root;
 };
 
-views['/goals'] = async () => {
-  const goals = await api('/api/goals');
-  const root = el('div');
-
+/** Input set shared by the "new goal" form and the edit panel, prefilled from `g` when editing. */
+function goalFields(g = {}) {
   const f = {
-    name: el('input', { type: 'text', placeholder: 'Bright Midnight ultra' }),
+    name: el('input', { type: 'text', placeholder: 'Bright Midnight ultra', value: g.name || '' }),
     sport: el('select', {}, ['Ride', 'Run', 'BackcountrySki', 'Hike', 'Other'].map((v) => el('option', { value: v }, v))),
     kind: el('select', {}, [el('option', { value: 'event' }, 'event'), el('option', { value: 'metric' }, 'metric target')]),
-    event_date: el('input', { type: 'date' }),
-    start_date: el('input', { type: 'date', value: todayStr() }),
-    distance_km: el('input', { type: 'number', step: '1', placeholder: '1100' }),
-    elevation_m: el('input', { type: 'number', step: '10', placeholder: '20000' }),
-    est_duration_h: el('input', { type: 'number', step: '0.5', placeholder: 'auto' }),
+    event_date: el('input', { type: 'date', value: g.event_date || '' }),
+    start_date: el('input', { type: 'date', value: g.start_date || todayStr() }),
+    distance_km: el('input', { type: 'number', step: '1', placeholder: '1100', value: g.distance_km ?? '' }),
+    elevation_m: el('input', { type: 'number', step: '10', placeholder: '20000', value: g.elevation_m ?? '' }),
+    est_duration_h: el('input', { type: 'number', step: '0.5', placeholder: 'auto', value: g.est_duration_h ?? '' }),
     support: el('select', {}, [el('option', { value: 'supported' }, 'supported'), el('option', { value: 'self-supported' }, 'self-supported')]),
-    target_metric: el('input', { type: 'text', placeholder: 'ftp' }),
-    target_value: el('input', { type: 'number', placeholder: '260' }),
-    notes: el('textarea', {}),
+    target_metric: el('input', { type: 'text', placeholder: 'ftp', value: g.target_metric || '' }),
+    target_value: el('input', { type: 'number', placeholder: '260', value: g.target_value ?? '' }),
+    notes: el('textarea', {}, g.notes || ''),
   };
+  f.sport.value = g.sport || 'Ride';
+  f.kind.value = g.kind || 'event';
+  f.support.value = g.support || 'supported';
+  return f;
+}
+
+function goalFormRows(f) {
+  return [
+    el('div.row', {}, el('div', { style: 'flex:2 1 260px' }, el('label', {}, 'Name'), f.name), el('div', {}, el('label', {}, 'Type'), f.kind), el('div', {}, el('label', {}, 'Sport'), f.sport)),
+    el('div.row', {}, el('div', {}, el('label', {}, 'Event date'), f.event_date), el('div', {}, el('label', {}, 'Plan starts'), f.start_date), el('div', {}, el('label', {}, 'Support'), f.support)),
+    el('div.row', {}, el('div', {}, el('label', {}, 'Distance (km)'), f.distance_km), el('div', {}, el('label', {}, 'Climbing (m)'), f.elevation_m), el('div', {}, el('label', {}, 'Duration override (h)'), f.est_duration_h)),
+    el('div.row', {}, el('div', {}, el('label', {}, 'Target metric'), f.target_metric), el('div', {}, el('label', {}, 'Target value'), f.target_value)),
+    el(
+      'p.muted',
+      { style: 'margin-top:4px' },
+      'Optional, and separate from "Type" above — set both to have the plan check whether this target is reachable given the fitness it builds (currently checked for ftp/power). Works for either goal type; leave blank for no check.'
+    ),
+    el('div', { style: 'margin-top:8px' }, el('label', {}, 'Notes'), f.notes),
+  ];
+}
+
+/** Best-effort duration/class estimate, wired to update on the relevant fields changing. */
+function goalPreviewNode(f) {
   const preview = el('p.muted', {}, '');
-  async function updatePreview() {
+  async function update() {
     if (!f.distance_km.value && !f.elevation_m.value && !f.est_duration_h.value) return preview.replaceChildren();
     try {
       const p = await api('/api/goals/preview', {
@@ -1208,23 +1229,23 @@ views['/goals'] = async () => {
       );
     } catch { /* preview is best-effort */ }
   }
-  for (const k of ['distance_km', 'elevation_m', 'est_duration_h', 'sport', 'support']) f[k].addEventListener('change', updatePreview);
+  for (const k of ['distance_km', 'elevation_m', 'est_duration_h', 'sport', 'support']) f[k].addEventListener('change', update);
+  return preview;
+}
+
+views['/goals'] = async () => {
+  const goals = await api('/api/goals');
+  const root = el('div');
+
+  const f = goalFields();
+  const preview = goalPreviewNode(f);
 
   root.append(
     el(
       'div.card',
       {},
       el('h3', {}, 'New goal'),
-      el('div.row', {}, el('div', { style: 'flex:2 1 260px' }, el('label', {}, 'Name'), f.name), el('div', {}, el('label', {}, 'Type'), f.kind), el('div', {}, el('label', {}, 'Sport'), f.sport)),
-      el('div.row', {}, el('div', {}, el('label', {}, 'Event date'), f.event_date), el('div', {}, el('label', {}, 'Plan starts'), f.start_date), el('div', {}, el('label', {}, 'Support'), f.support)),
-      el('div.row', {}, el('div', {}, el('label', {}, 'Distance (km)'), f.distance_km), el('div', {}, el('label', {}, 'Climbing (m)'), f.elevation_m), el('div', {}, el('label', {}, 'Duration override (h)'), f.est_duration_h)),
-      el('div.row', {}, el('div', {}, el('label', {}, 'Target metric'), f.target_metric), el('div', {}, el('label', {}, 'Target value'), f.target_value)),
-      el(
-        'p.muted',
-        { style: 'margin-top:4px' },
-        'Optional, and separate from "Type" above — set both to have the plan check whether this target is reachable given the fitness it builds (currently checked for ftp/power). Works for either goal type; leave blank for no check.'
-      ),
-      el('div', { style: 'margin-top:8px' }, el('label', {}, 'Notes'), f.notes),
+      ...goalFormRows(f),
       preview,
       el(
         'div',
@@ -1247,6 +1268,42 @@ views['/goals'] = async () => {
     )
   );
 
+  const editArea = el('div', { id: 'goal-edit' });
+
+  function openEditor(g) {
+    const ef = goalFields(g);
+    const epreview = goalPreviewNode(ef);
+    const saveBtn = el('button', {
+      onclick: async (e) => {
+        e.target.disabled = true;
+        try {
+          const body = Object.fromEntries(Object.entries(ef).map(([k, node]) => [k, node.value]));
+          await api(`/api/goals/${g.id}`, { method: 'PATCH', body });
+          await api('/api/plan/regenerate', { method: 'POST', body: { goalId: g.id, reason: 'goal edited' } });
+          editArea.replaceChildren();
+          render();
+        } catch (err) {
+          alert(err.message);
+          e.target.disabled = false;
+        }
+      },
+    }, 'Save changes');
+    const cancelBtn = el('button.ghost', { onclick: () => editArea.replaceChildren() }, 'Cancel');
+
+    editArea.replaceChildren(
+      el(
+        'div.card',
+        {},
+        el('h3', { style: 'margin-top:0' }, `Edit ${g.name}`),
+        ...goalFormRows(ef),
+        epreview,
+        el('p.muted', {}, 'Saving regenerates the plan from today using the updated details.'),
+        el('div.row.tight', { style: 'margin-top:10px' }, saveBtn, cancelBtn)
+      )
+    );
+    editArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
   if (goals.length) {
     const t = el('table.data');
     t.append(el('thead', {}, el('tr', {}, ['Goal', 'Date', 'Sport', 'Distance', 'Climb', 'Status', ''].map((h) => el('th', {}, h)))));
@@ -1265,12 +1322,28 @@ views['/goals'] = async () => {
           el(
             'td',
             {},
+            el('button.ghost', { onclick: () => openEditor(g) }, 'Edit'),
+            ' ',
             el('button.ghost', {
               onclick: async () => {
                 await api(`/api/goals/${g.id}`, { method: 'PATCH', body: { status: g.status === 'active' ? 'archived' : 'active' } });
                 render();
               },
-            }, g.status === 'active' ? 'Archive' : 'Reactivate')
+            }, g.status === 'active' ? 'Archive' : 'Reactivate'),
+            ' ',
+            el('button.ghost', {
+              onclick: async (e) => {
+                if (!confirm(`Delete "${g.name}"? This also deletes its plan history and can't be undone.`)) return;
+                e.target.disabled = true;
+                try {
+                  await api(`/api/goals/${g.id}`, { method: 'DELETE' });
+                  render();
+                } catch (err) {
+                  alert(err.message);
+                  e.target.disabled = false;
+                }
+              },
+            }, 'Delete')
           )
         )
       );
@@ -1278,6 +1351,7 @@ views['/goals'] = async () => {
     t.append(tb);
     root.append(el('div.card', {}, el('h3', {}, 'Goals'), el('div.chart-wrap', {}, t)));
   }
+  root.append(editArea);
   return root;
 };
 
