@@ -11,7 +11,7 @@ import {
 } from './metrics.js';
 import {
   generatePlan, savePlan, activePlan, planWeeks, weekForDate, activeGoal, regenerate, estimateDuration,
-  durationClass, adaptationInputs,
+  durationClass, adaptationInputs, listConstraints, setConstraint, clearConstraint, constraintMap,
 } from './planner.js';
 import { buildBrief, saveBrief, getBrief, listBriefs, runWeekly, redsScreen, proteinFlag } from './brief.js';
 import { buildWorkoutDebrief } from './debrief.js';
@@ -217,10 +217,12 @@ export const routes = {
       planWeeks(plan.id),
       db.prepare('SELECT id, version, generated_at, reason, active FROM plans WHERE goal_id = ? ORDER BY version DESC').all(goal.id),
     ]);
+    const constraints = await constraintMap();
     const weeks = rawWeeks.map((w) => ({
       ...w,
       key_sessions: safeJson(w.key_sessions_json) || [],
       governing: safeJson(w.governing_json) || [],
+      constraint: constraints.get(w.start_date) || null,
     }));
     // Attach actuals for weeks that have already happened.
     const cur = weekStart(today());
@@ -249,6 +251,31 @@ export const routes = {
   },
 
   'GET /api/plan/adaptation': async () => adaptationInputs(),
+
+  // --- declared week constraints ---------------------------------------------
+  // Stored against the calendar, not against a plan version, so they survive
+  // every regeneration. Setting or clearing one regenerates the active goal's
+  // plan so the change is visible immediately rather than at the next weekly run.
+  'GET /api/constraints': async () => listConstraints(),
+
+  'POST /api/constraints': async ({ body }) => {
+    const ws = body?.week_start;
+    if (!ws) throw httpError(400, 'week_start required');
+    const hours = numOrNull(body.hours);
+    if (hours == null || hours < 0) throw httpError(400, 'hours required (0 or more)');
+    const saved = await setConstraint(ws, hours, body.reason || null);
+    const goal = await activeGoal();
+    if (goal) await regenerate(goal.id, `constrained week ${saved.week_start} (${hours}h)`);
+    return saved;
+  },
+
+  'DELETE /api/constraints/:weekStart': async ({ params }) => {
+    const removed = await clearConstraint(params.weekStart);
+    if (!removed) throw httpError(404, 'no constraint for that week');
+    const goal = await activeGoal();
+    if (goal) await regenerate(goal.id, `constraint cleared for ${removed.week_start}`);
+    return { deleted: true, ...removed };
+  },
 
   'PATCH /api/plan/weeks/:id': async ({ params, body }) => {
     const id = parseInt(params.id, 10);

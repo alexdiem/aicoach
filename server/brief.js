@@ -10,7 +10,7 @@ import {
   currentFitness, rampRate, efTrend, viDrift, wbalRecoveryFlag, weekActuals,
   compareWeek, recentWeeks, fuellingSignals,
 } from './metrics.js';
-import { activePlan, weekForDate, activeGoal, adaptationInputs, complianceWindow, regenerate, tssPerHour } from './planner.js';
+import { activePlan, weekForDate, activeGoal, adaptationInputs, complianceWindow, constraintMap, regenerate, tssPerHour } from './planner.js';
 import { painFlag, recentPain } from './backpain.js';
 
 const SEV_ORDER = { critical: 0, warn: 1, info: 2, good: 3 };
@@ -41,12 +41,15 @@ export async function buildBrief({ goalId = null, asOf = today() } = {}) {
   // adaptationInputs' own currentFitness/efTrend/recentWeeks(asOf, 5) — that
   // would re-run three queries buildBrief already just ran to get one field
   // (chronicUndercompliance) out of the seven adaptationInputs returns.
-  const [thisWeek, lastPlanWeek, pain, adapt] = await Promise.all([
+  const [thisWeek, lastPlanWeek, pain, adapt, constraints] = await Promise.all([
     plan ? weekForDate(plan.id, ws) : null,
     plan ? weekForDate(plan.id, lastWs) : null,
     painFlag({ asOf }),
     complianceWindow(weeks8.slice(-5, -1)),
+    constraintMap(),
   ]);
+  const thisConstraint = constraints.get(ws) || null;
+  const lastConstraint = constraints.get(lastWs) || null;
   const comparison = lastPlanWeek ? compareWeek(lastPlanWeek, lastActual) : null;
 
   const flags = [];
@@ -185,15 +188,37 @@ export async function buildBrief({ goalId = null, asOf = today() } = {}) {
 
   // ------------------------------------------------- plan vs actual last week
   if (comparison) {
-    const verdict = evaluateCompliance(comparison, lastPlanWeek, adapt);
+    const verdict = evaluateCompliance(comparison, lastPlanWeek, adapt, lastConstraint);
     flags.push({ id: 'compliance', severity: verdict.severity, title: 'Last week: planned vs actual', text: verdict.text, numbers: comparison });
     if (verdict.action) actions.push(verdict.action);
+  }
+
+  // ------------------------------------------------------ declared constraint
+  if (thisConstraint) {
+    flags.push({
+      id: 'constrained-week',
+      severity: 'info',
+      title: 'Constrained week (declared)',
+      text: `You flagged this week as ${thisConstraint.hours}h available${thisConstraint.reason ? ` — ${thisConstraint.reason}` : ''}, and the plan is built to that, not to what the block would otherwise have asked for. Keep the quality session and the strength work; let the endurance volume go. It won't be counted against you: this week is excluded from the compliance window that feeds future planning, so it can't quietly convince the planner you're an athlete who doesn't finish weeks.`,
+      numbers: { hoursAvailable: thisConstraint.hours, targetTss: thisWeek?.target_tss ?? null },
+    });
   }
 
   // ---------------------------------------------- decide and APPLY the change
   // One adjustment, highest severity wins, written straight into the plan week
   // so the directive, the "do this" list and the week table cannot disagree.
-  const adjustment = decideAdjustment({ thisWeek, fit, tsb, ef, ramp, rampCap, underRecovery });
+  let adjustment = decideAdjustment({ thisWeek, fit, tsb, ef, ramp, rampCap, underRecovery });
+  // Every adjustment above exists to stop fatigue accumulating. A declared
+  // constrained week already sitting at or below maintenance load (CTL × 7)
+  // isn't accumulating any — it's shedding it — so cutting it further protects
+  // nothing and would replace "protect the quality session" with the generic
+  // reduced-week prescription that says the opposite. Above maintenance the
+  // travel week still carries real load, fatigue is the binding limit rather
+  // than the diary, and the adjustment runs exactly as it would anywhere else.
+  if (adjustment && thisConstraint && thisWeek) {
+    const maintenance = round((fit.ctl || 0) * 7, 0);
+    if (thisWeek.target_tss <= maintenance) adjustment = null;
+  }
   let week = thisWeek;
   if (adjustment && thisWeek && plan) {
     week = await applyAdjustment(thisWeek, adjustment);
@@ -481,10 +506,21 @@ function buildDirective({ adjustment, week, thisWeek, fit, tsb, ramp, rampCap, c
  * one is the actual problem), and a shortfall gets read differently once
  * adaptationInputs says it's the Nth week running, not a one-off.
  */
-export function evaluateCompliance(c, lastPlanWeek, adapt) {
+export function evaluateCompliance(c, lastPlanWeek, adapt, constraint = null) {
   const pct = c.tssPct;
   if (pct == null) {
     return { severity: 'info', text: `Last week: ${c.actualTss} TSS, ${c.actualHours}h — no comparable target to grade it against.` };
+  }
+
+  // A week the athlete declared constrained before it started isn't graded on
+  // the usual scale at all. Scoring it as a shortfall would be scoring them for
+  // telling the truth in advance, which is precisely the behaviour that makes
+  // the rest of this system work.
+  if (constraint) {
+    return {
+      severity: 'good',
+      text: `Last week: ${c.actualTss} TSS, ${c.actualHours}h against ${constraint.hours}h declared available${constraint.reason ? ` (${constraint.reason})` : ''}. You flagged it up front, so it's graded against that and left out of the compliance window entirely — no shortfall, nothing to make up. The block picks up where it left off.`,
+    };
   }
 
   let verdict;

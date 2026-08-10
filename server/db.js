@@ -122,6 +122,18 @@ CREATE TABLE IF NOT EXISTS plan_weeks (
 );
 CREATE INDEX IF NOT EXISTS idx_plan_weeks ON plan_weeks(plan_id, start_date);
 
+-- Weeks the athlete has told us up front they can't train normally in (work
+-- travel, a house move, anything that constrains the diary rather than the
+-- body). Keyed by week start date and NOT by plan_week id, deliberately: a
+-- constraint is a fact about the calendar, so it has to survive every replan
+-- and apply to whatever plan version is active at the time.
+CREATE TABLE IF NOT EXISTS week_constraints (
+  week_start  TEXT PRIMARY KEY,
+  hours       REAL NOT NULL,
+  reason      TEXT,
+  created_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS activities (
   id             TEXT PRIMARY KEY,
   athlete_id     TEXT,
