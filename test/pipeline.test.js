@@ -455,6 +455,12 @@ test('a declared constraint caps its week without dragging the following weeks d
   assert.ok(sessions.some((s) => s.name === 'Dropped this week'), 'expected an explicit note about what was dropped');
   assert.ok(constrained.long_session_h <= constrained.target_hours * 0.6 + 0.05);
 
+  // The focus paragraph still describes the phase as a whole (correct — that's
+  // what the block is building toward) but has to say plainly that *this* week
+  // doesn't follow it, or it reads as contradicting the constraint banner above it.
+  assert.match(constrained.focus, /work travel/);
+  assert.match(constrained.focus, /capped to the 3h/);
+
   // The critical one: a constrained week is not the new baseline. Without the
   // guard, the 10% week-on-week rule would cap the next week near the travel
   // week's load and the plan would never climb back out.

@@ -557,7 +557,7 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
       strength_sessions: strength,
       key_sessions_json: JSON.stringify(sessions),
       projected_ctl: round(ctl, 1),
-      focus: focusFor(phase, cls),
+      focus: constraint ? `${focusFor(phase, cls)} This particular week is capped to the ${constraint.hours}h you declared${constraint.reason ? ` (${constraint.reason})` : ''} — treat the phase description above as what the block is building toward, not what this week itself will do.` : focusFor(phase, cls),
       governing_json: JSON.stringify(governing),
       notes: null,
     });
