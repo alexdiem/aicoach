@@ -284,6 +284,72 @@ function keySessions(phase, cls, goal, ctx) {
   return s;
 }
 
+// --- declared week constraints ----------------------------------------------
+
+/** Every declared constraint, keyed by week start date. */
+export async function constraintMap() {
+  const rows = await db.prepare('SELECT * FROM week_constraints').all();
+  return new Map(rows.map((r) => [r.week_start, r]));
+}
+
+export async function listConstraints() {
+  return db.prepare('SELECT * FROM week_constraints ORDER BY week_start').all();
+}
+
+export async function setConstraint(weekStartDate, hours, reason = null) {
+  const ws = weekStart(weekStartDate);
+  const h = Math.max(0, Number(hours) || 0);
+  await db
+    .prepare(
+      `INSERT INTO week_constraints (week_start, hours, reason, created_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(week_start) DO UPDATE SET hours = excluded.hours, reason = excluded.reason`
+    )
+    .run(ws, h, reason || null, new Date().toISOString());
+  return db.prepare('SELECT * FROM week_constraints WHERE week_start = ?').get(ws);
+}
+
+export async function clearConstraint(weekStartDate) {
+  const ws = weekStart(weekStartDate);
+  const existing = await db.prepare('SELECT * FROM week_constraints WHERE week_start = ?').get(ws);
+  if (!existing) return null;
+  await db.prepare('DELETE FROM week_constraints WHERE week_start = ?').run(ws);
+  return existing;
+}
+
+/**
+ * Sessions for a week the athlete has already said they can't train normally
+ * in. The rule is deliberately blunt rather than a reallocation engine: keep
+ * the phase's quality session and the strength work, drop the volume. The hard
+ * session is the time-efficient one — 20-40 s efforts need freshness, not
+ * hours — and strength needs no bike at all, which is exactly the constraint a
+ * work trip imposes.
+ */
+function constrainedSessions(planned, constraint, hours) {
+  const QUALITY = ['SIT', 'Threshold', 'VO2', 'Sharpening', 'Openers'];
+  const quality = planned.find((s) => QUALITY.includes(s.name));
+  const strength = planned.find((s) => s.name === 'Strength');
+  const why = constraint.reason ? ` (${constraint.reason})` : '';
+
+  const out = [];
+  if (hours > 0 && quality) {
+    out.push({ ...quality, detail: `${quality.detail} — protect this one: it's the session that survives a short week intact.` });
+  }
+  if (strength) out.push(strength);
+  if (hours > 0) {
+    const fill = round(Math.max(0, hours - (quality ? 1 : 0)), 1);
+    if (fill > 0) {
+      out.push({ name: 'Easy rides', detail: `Fill the remaining ~${fill}h in whatever pieces the week allows, all of it conversational. Frequency over duration.` });
+    }
+  }
+  out.push({
+    name: 'Dropped this week',
+    detail: hours > 0
+      ? `${constraint.hours}h available${why}, so the long endurance ride is off. It isn't compressed into a shorter hard ride or made up next week — the volume is simply not happening, and the plan already accounts for that.`
+      : `No riding time available${why}. This is a maintenance week: keep the strength sessions, walk where you can, and pick the plan back up as written when you're home.`,
+  });
+  return out;
+}
+
 // --- the generator ----------------------------------------------------------
 
 /**
@@ -324,6 +390,7 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
   let maxRampBase = await getSettingNum('max_ramp_base', 6);
   let maxRampBuild = await getSettingNum('max_ramp_build', 4);
   const currentStrength = Math.max(0, await getSettingNum('strength_sessions_per_week', 2));
+  const constraints = await constraintMap();
   const notes = [];
 
   if (adapt.underRecovery) {
@@ -415,6 +482,21 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
       targetTss = Math.max(targetTss, round(ctl * 7 * 0.8, 0));
     }
 
+    // A week the athlete has declared constrained is capped at what they said
+    // they'd actually have. Applied last, after every phase rule and floor, so
+    // it wins: this is a stated fact about the diary, not a training decision
+    // to be balanced against the others.
+    const constraint = constraints.get(ws);
+    if (constraint) {
+      const cappedTss = Math.min(targetTss, round(constraint.hours * tph, 0));
+      governing.push({
+        decision: 'constrained week',
+        framework: 'Personal',
+        reason: `${constraint.hours}h available${constraint.reason ? ` (${constraint.reason})` : ''} against a ${round(targetTss / tph, 1)}h week: target cut ${targetTss} → ${cappedTss} TSS. Not a load decision — the week is what it is, so the plan states it rather than prescribing hours that were never going to happen.`,
+      });
+      targetTss = cappedTss;
+    }
+
     // Strength: held at the athlete's current self-reported weekly frequency
     // (Settings) across every phase, cut only for taper/race recovery.
     let strength;
@@ -442,7 +524,11 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
     if (isRecovery) longH = round(longH * 0.6, 1);
     if (phase === 'taper') longH = round(longPeak * 0.4, 1);
     if (phase === 'race') longH = round(demand.hours, 1);
-    longH = Math.min(longH, round(hours * 0.6, 1) || longH);
+    // The long ride can't exceed 60% of the week it sits in. `hours` is 0 on a
+    // fully constrained week, which is a real answer (no long ride at all), so
+    // the fallback only covers hours being genuinely unknown.
+    const longCap = Number.isFinite(hours) ? round(hours * 0.6, 1) : longH;
+    longH = Math.min(longH, longCap);
 
     // Simulate CTL through the week (daily TSS = weekly/7, 42-day EWMA).
     let simCtl = ctl;
@@ -450,7 +536,8 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
     ctl = simCtl;
 
     const ctx = { longHours: longH, strength, weekIndex: i };
-    const sessions = keySessions(phase, cls, goal, ctx);
+    let sessions = keySessions(phase, cls, goal, ctx);
+    if (constraint) sessions = constrainedSessions(sessions, constraint, hours);
 
     weeks.push({
       week_index: i + 1,
@@ -475,7 +562,12 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
       notes: null,
     });
 
-    if (!isRecovery && phase !== 'taper' && phase !== 'race') {
+    // A constrained week is explicitly NOT the new baseline. Letting it set
+    // lastLoadingTss would drag every following week down through the 10%
+    // week-on-week rule — one 3h travel week would cap the next week at 3.3h
+    // and the plan would never climb back out. Same reasoning as a recovery
+    // week: neither is a measurement of what the athlete can carry.
+    if (!isRecovery && !constraint && phase !== 'taper' && phase !== 'race') {
       lastLoadingTss = targetTss;
       peakLoadingTss = Math.max(peakLoadingTss, targetTss);
     }
@@ -612,11 +704,21 @@ function focusFor(phase, cls) {
  * currentFitness/efTrend/recentWeeks a second time in the same request.
  */
 export async function complianceWindow(weeks) {
-  const actualWeekly = weeks.map((w) => w.tss || 0);
-  const actualWeeklyMean = round(mean(actualWeekly), 0);
+  // Declared constraints drop out of the window entirely, on both sides of the
+  // ratio. This is the whole point of declaring one: compliance exists to
+  // measure what the athlete can absorb, and a week spent in airports measures
+  // nothing about that. Leaving it in does real damage — a single travel week
+  // against three normal ones pulls a 4-week mean down by roughly 20%, right
+  // onto the chronicUndercompliance line, and from there the planner rebuilds
+  // every future target around an athlete who never existed.
+  const constraints = await constraintMap();
+  const counted = weeks.filter((w) => !constraints.has(w.weekStart));
+  const excluded = weeks.length - counted.length;
+
+  const actualWeeklyMean = round(mean(counted.map((w) => w.tss || 0)), 0);
 
   const plannedRows = await Promise.all(
-    weeks.map((w) =>
+    counted.map((w) =>
       db
         .prepare(
           `SELECT pw.target_tss FROM plan_weeks pw JOIN plans p ON p.id = pw.plan_id
@@ -634,6 +736,7 @@ export async function complianceWindow(weeks) {
     plannedWeeklyMean: plannedMean,
     compliancePct,
     complianceWeeks: planned.length,
+    constrainedWeeksExcluded: excluded,
     chronicUndercompliance: compliancePct != null && compliancePct < 80 && planned.length >= 2,
   };
 }

@@ -182,6 +182,18 @@ current CTL, compliance and EF trend. Weeks before the current one are carried o
 verbatim, so what was originally prescribed survives every regeneration. Plan versions
 are kept.
 
+**Weeks you already know are compromised.** Work travel, a house move — anything that
+limits the diary rather than the legs. Declare the hours you'll realistically have on
+the Plan page and the week is capped to them: the phase's quality session and the
+strength work are kept, the endurance volume is dropped, and the long ride shrinks to
+fit. Two things make this more than a note. The week is left out of the compliance
+window that drives future planning — a single unflagged travel week against three normal
+ones pulls a 4-week mean down by roughly 20%, right onto the line where the planner
+starts rebuilding every future target around an athlete who can't finish weeks. And it
+never becomes the new baseline for the ramp, so the 10% week-on-week rule doesn't anchor
+the following weeks to a 3-hour week. Constraints are stored against the calendar rather
+than a plan version, so they survive every regeneration.
+
 **Today, not just this week.** The Brief page also shows a same-day readiness check —
 HRV and resting HR against your own trailing 21-day baseline, and last night's sleep
 duration — using whatever daily wellness sync already pulled in. Quiet unless a number

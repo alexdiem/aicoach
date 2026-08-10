@@ -428,6 +428,145 @@ test('base-phase intensity is polarized: the quality session is SIT, not moderat
   }
 });
 
+test('a declared constraint caps its week without dragging the following weeks down', async () => {
+  const before = await planner.generatePlan(goalId, { reason: 'pre-constraint' });
+  // A loading week far enough out that it isn't the partially-carried first week.
+  const target = before.weeks.filter((w) => !w.is_recovery && ['base1', 'base2', 'base3'].includes(w.phase))[2];
+  assert.ok(target, 'expected a base loading week to constrain');
+  const idx = before.weeks.indexOf(target);
+  const nextBefore = before.weeks[idx + 1];
+
+  await planner.setConstraint(target.start_date, 3, 'work travel');
+  const after = await planner.generatePlan(goalId, { reason: 'post-constraint' });
+  const constrained = after.weeks.find((w) => w.start_date === target.start_date);
+
+  // Capped to roughly what 3h can carry, and well under what was planned.
+  assert.ok(constrained.target_tss < target.target_tss, 'constrained week should be cut');
+  assert.ok(constrained.target_hours <= 3.05, `constrained week was ${constrained.target_hours}h, expected <= 3`);
+  const gov = JSON.parse(constrained.governing_json);
+  assert.ok(gov.some((g) => g.decision === 'constrained week'), 'expected a constrained-week framework call');
+  assert.match(gov.find((g) => g.decision === 'constrained week').reason, /work travel/);
+
+  // The quality session and strength survive; the long endurance ride does not.
+  const sessions = JSON.parse(constrained.key_sessions_json);
+  assert.ok(sessions.some((s) => s.name === 'SIT'), 'the quality session should be protected');
+  assert.ok(sessions.some((s) => s.name === 'Strength'), 'strength should be protected');
+  assert.ok(!sessions.some((s) => s.name === 'Long endurance'), 'the long endurance ride should be dropped');
+  assert.ok(sessions.some((s) => s.name === 'Dropped this week'), 'expected an explicit note about what was dropped');
+  assert.ok(constrained.long_session_h <= constrained.target_hours * 0.6 + 0.05);
+
+  // The critical one: a constrained week is not the new baseline. Without the
+  // guard, the 10% week-on-week rule would cap the next week near the travel
+  // week's load and the plan would never climb back out.
+  const nextAfter = after.weeks[after.weeks.indexOf(constrained) + 1];
+  assert.ok(
+    nextAfter.target_tss > constrained.target_tss * 2,
+    `week after a 3h travel week was ${nextAfter.target_tss} TSS, barely above the ${constrained.target_tss} TSS travel week — the ramp got anchored to it`
+  );
+  assert.ok(
+    nextAfter.target_tss >= nextBefore.target_tss * 0.9,
+    `week after the constraint fell to ${nextAfter.target_tss} TSS from ${nextBefore.target_tss} unconstrained`
+  );
+
+  await planner.clearConstraint(target.start_date);
+  const restored = await planner.generatePlan(goalId, { reason: 'constraint-cleared' });
+  const back = restored.weeks.find((w) => w.start_date === target.start_date);
+  assert.equal(back.target_tss, target.target_tss, 'clearing the constraint should restore the original target');
+});
+
+test('a constrained week is excluded from the compliance window that drives future targets', async () => {
+  const plan = await planner.generatePlan(goalId, { reason: 'compliance-exclusion' });
+  const saved = await planner.savePlan(plan);
+  const rows = (await planner.planWeeks(saved.planId)).slice(0, 4);
+  assert.equal(rows.length, 4, 'expected four plan weeks to grade against');
+
+  // Three weeks hit target exactly; one is a travel week ridden at ~15%.
+  const travelWs = rows[1].start_date;
+  const window = rows.map((r) => ({
+    weekStart: r.start_date,
+    tss: r.start_date === travelWs ? Math.round(r.target_tss * 0.15) : r.target_tss,
+  }));
+
+  // Undeclared, it drags the mean toward the chronicUndercompliance line — the
+  // exact failure this feature exists to prevent.
+  await planner.clearConstraint(travelWs);
+  const undeclared = await planner.complianceWindow(window);
+  assert.equal(undeclared.constrainedWeeksExcluded, 0);
+  assert.equal(undeclared.complianceWeeks, 4);
+  assert.ok(
+    undeclared.compliancePct < 85,
+    `an undeclared travel week should drag compliance down, got ${undeclared.compliancePct}%`
+  );
+
+  // Declared, it leaves both sides of the ratio and the remaining weeks grade clean.
+  await planner.setConstraint(travelWs, 3, 'work travel');
+  const declared = await planner.complianceWindow(window);
+  assert.equal(declared.constrainedWeeksExcluded, 1);
+  assert.equal(declared.complianceWeeks, 3);
+  assert.equal(declared.compliancePct, 100);
+  assert.equal(declared.chronicUndercompliance, false);
+
+  await planner.clearConstraint(travelWs);
+});
+
+test('a declared week is not graded as a shortfall', async () => {
+  const comparison = {
+    actualTss: 90, actualHours: 3, plannedTss: 600, tssPct: 15,
+    distribution: { actual: { z1_2: null }, planned: {} },
+    longSession: { plannedHours: 4, actualHours: 0, deltaHours: -4 },
+  };
+  const scolded = brief.evaluateCompliance(comparison, { is_recovery: 0 }, null, null);
+  assert.equal(scolded.severity, 'warn');
+
+  const declared = brief.evaluateCompliance(comparison, { is_recovery: 0 }, null, { hours: 3, reason: 'work travel' });
+  assert.equal(declared.severity, 'good');
+  assert.match(declared.text, /work travel/);
+  assert.match(declared.text, /no shortfall/);
+  // The long-session scolding that fires on an ordinary short week must not
+  // reappear here — it's the same "you missed it" message in another costume.
+  assert.ok(!/protect it ahead of/.test(declared.text), 'a declared week should not be lectured about its long session');
+  assert.equal(declared.action, undefined);
+});
+
+test('a constrained week suppresses a redundant adjustment but not one that cuts further', async () => {
+  const plan = await planner.generatePlan(goalId, { reason: 'constraint-vs-adjustment' });
+  await planner.savePlan(plan);
+  const week = plan.weeks.find((w) => !w.is_recovery && w.phase.startsWith('base') && w.start_date > plan.weeks[0].start_date);
+  assert.ok(week, 'expected a base loading week');
+
+  // TSB deep enough that tsb-critical (×0.5) would normally fire.
+  await db.exec('DELETE FROM wellness');
+  for (let d = -8; d <= 0; d++) {
+    await db.prepare('INSERT OR REPLACE INTO wellness (date, ctl, atl) VALUES (?,60,100)').run(addDays(week.start_date, d));
+  }
+
+  // A constraint far tighter than the adjustment: the adjustment is a no-op on
+  // top of it, so it must not fire and overwrite the constrained sessions.
+  await planner.setConstraint(week.start_date, 2, 'work travel');
+  await planner.regenerate(goalId, 'tight-constraint');
+  const tight = await brief.buildBrief({ goalId, asOf: week.start_date });
+  assert.ok(
+    !tight.governing.some((g) => g.decision.includes('in-week adjustment')),
+    'a constraint tighter than the adjustment should suppress it'
+  );
+  const tightWeek = await planner.weekForDate((await planner.activePlan(goalId)).id, week.start_date);
+  const sessions = JSON.parse(tightWeek.key_sessions_json);
+  assert.ok(sessions.some((s) => s.name === 'SIT'), 'the constrained sessions should survive intact');
+
+  // A constraint loose enough to leave real load in the week: fatigue is now
+  // the binding limit, and the adjustment has to run as it would anywhere else.
+  await planner.setConstraint(week.start_date, 20, 'travelling but bike is with me');
+  await planner.regenerate(goalId, 'loose-constraint');
+  const loose = await brief.buildBrief({ goalId, asOf: week.start_date });
+  assert.ok(
+    loose.governing.some((g) => g.decision.includes('in-week adjustment')),
+    'a constraint looser than the fatigue cut should still let the adjustment fire'
+  );
+
+  await planner.clearConstraint(week.start_date);
+  await db.exec('DELETE FROM wellness');
+});
+
 test('TSB around -20 mid-block does not trigger a load-cutting warn, but the same TSB in taper does', async () => {
   const generated = await planner.generatePlan(goalId, { reason: 'block-aware-check' });
   await planner.savePlan(generated);

@@ -587,6 +587,11 @@ function noticeWithAction(n, goalId) {
   return el('div.notice', {}, ...children);
 }
 
+// Which week's detail card is open, so a re-render (after a constraint is set,
+// which regenerates the whole plan) comes back to the week being worked on
+// rather than snapping to today's.
+let openWeek = null;
+
 views['/plan'] = async () => {
   const [plan, weeks, fitness] = await Promise.all([
     api('/api/plan'),
@@ -648,7 +653,7 @@ views['/plan'] = async () => {
   for (const w of plan.weeks) {
     const isNow = cur && w.start_date === cur.start_date;
     const tr = el(`tr${w.is_recovery ? '.recovery' : ''}${isNow ? '.now' : ''}`, {});
-    tr.append(el('td', {}, el('div', {}, w.start_date)));
+    tr.append(el('td', {}, el('div', {}, w.start_date), w.constraint ? el('div.muted', {}, `✈ ${w.constraint.hours}h`) : null));
     tr.append(el('td', {}, el('span.phase', {}, w.phase + (w.is_recovery ? ' · rec' : ''))));
     tr.append(el('td.num', {}, fmt(w.target_tss)));
     tr.append(
@@ -665,6 +670,7 @@ views['/plan'] = async () => {
     tr.append(el('td.num', {}, w.strength_sessions));
     tr.append(el('td.num', {}, fmt(w.projected_ctl, 0)));
     tr.addEventListener('click', () => {
+      openWeek = w.start_date;
       const detail = document.getElementById('week-detail');
       detail.replaceChildren(weekDetail(w));
       detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -674,7 +680,8 @@ views['/plan'] = async () => {
   }
   table.append(tb);
   root.append(el('div.card', {}, el('h3', {}, 'Weeks'), el('p.muted', {}, 'Click a week for its key sessions and framework calls.'), el('div.chart-wrap', {}, table)));
-  root.append(el('div', { id: 'week-detail' }, cur ? weekDetail(cur) : null));
+  const detailWeek = plan.weeks.find((w) => w.start_date === openWeek) || cur;
+  root.append(el('div', { id: 'week-detail' }, detailWeek ? weekDetail(detailWeek) : null));
   if (plan.versions?.length) root.append(planHistoryCard(plan.versions));
   return root;
 };
@@ -722,6 +729,16 @@ function planHistoryCard(versions) {
   );
 }
 
+function constraintBanner(c) {
+  return el(
+    'div.notice',
+    {},
+    el('strong', {}, `Constrained week: ${c.hours}h available`),
+    c.reason ? ` — ${c.reason}.` : '.',
+    ' Targets below are capped to that, and this week is excluded from the compliance window that shapes future plans.'
+  );
+}
+
 /** Displays a plan week, with an inline "Edit" mode that PATCHes the week in place. */
 function weekDetail(w) {
   const container = el('div');
@@ -735,8 +752,14 @@ function weekDetail(w) {
           'div',
           { style: 'display:flex;justify-content:space-between;align-items:flex-start;gap:12px' },
           el('h3', { style: 'margin:0' }, `Week of ${w.start_date} — ${w.phase}${w.is_recovery ? ' (recovery)' : ''}`),
-          el('button.ghost', { onclick: showEdit }, 'Edit')
+          el(
+            'span',
+            { style: 'display:inline-flex;gap:6px' },
+            el('button.ghost', { onclick: showConstraint }, w.constraint ? 'Constraint' : "Can't train normally?"),
+            el('button.ghost', { onclick: showEdit }, 'Edit')
+          )
         ),
+        w.constraint ? constraintBanner(w.constraint) : null,
         el('p', {}, w.focus || ''),
         w.notes ? el('p.muted', {}, w.notes) : null,
         el(
@@ -765,6 +788,74 @@ function weekDetail(w) {
               )
             )
           : null
+      )
+    );
+  }
+
+  /**
+   * Declare (or clear) a constraint on this week. Unlike Edit, which patches
+   * the stored week and is wiped by the next regenerate, this is stored against
+   * the date and survives replanning — and it's what keeps the week out of the
+   * compliance window that drives future targets.
+   */
+  function showConstraint() {
+    const c = w.constraint;
+    const hours = el('input', { type: 'number', step: '0.5', min: '0', placeholder: '3', value: c?.hours ?? '' });
+    const reason = el('input', { type: 'text', placeholder: 'work travel', value: c?.reason || '', style: 'flex:1 1 220px' });
+    const out = el('p.muted', {});
+
+    async function submit(e, body, verb) {
+      e.preventDefault();
+      e.target.disabled = true;
+      const original = e.target.textContent;
+      e.target.textContent = `${verb}…`;
+      try {
+        await body();
+        openWeek = w.start_date; // come back to this week, not today's
+        await render(); // the whole plan was regenerated, not just this week
+      } catch (err) {
+        out.textContent = err.message;
+        e.target.disabled = false;
+        e.target.textContent = original;
+      }
+    }
+
+    container.replaceChildren(
+      el(
+        'div.card',
+        {},
+        el('h3', { style: 'margin-top:0' }, `Week of ${w.start_date} — realistically available`),
+        el(
+          'p.muted',
+          {},
+          "Use this when you already know the week is compromised — work travel, a house move, anything that limits the diary rather than the legs. The plan caps this week to the hours you give it, keeps the quality session and strength work, and drops the endurance volume. It also leaves the week out of the compliance window, so a trip you flagged in advance can't drag your future targets down."
+        ),
+        el(
+          'div.row',
+          {},
+          el('div', {}, el('label', {}, 'Hours available'), hours),
+          el('div', { style: 'flex:1 1 220px' }, el('label', {}, 'Reason (optional)'), reason)
+        ),
+        el(
+          'div.row.tight',
+          { style: 'margin-top:10px' },
+          el('button', {
+            onclick: (e) => submit(e, async () => {
+              if (hours.value === '') throw new Error('hours required — use 0 if there is no riding time at all');
+              await api('/api/constraints', {
+                method: 'POST',
+                body: { week_start: w.start_date, hours: hours.value, reason: reason.value.trim() || null },
+              });
+            }, 'Saving'),
+          }, c ? 'Update' : 'Save'),
+          c
+            ? el('button.ghost', {
+                onclick: (e) => submit(e, () => api(`/api/constraints/${w.start_date}`, { method: 'DELETE' }), 'Clearing'),
+              }, 'Clear constraint')
+            : null,
+          el('button.ghost', { onclick: (e) => { e.preventDefault(); showView(); } }, 'Cancel')
+        ),
+        out
       )
     );
   }
