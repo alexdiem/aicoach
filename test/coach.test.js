@@ -99,6 +99,10 @@ test('askCoach sends the conversation plus a grounded system prompt, and returns
     assert.ok(seen.headers['anthropic-version']);
     assert.equal(seen.body.model, 'claude-sonnet-5');
     assert.deepEqual(seen.body.messages, messages);
+    // Current-gen models think by default with no `thinking` param sent, and
+    // those tokens draw from max_tokens — too low a budget here means a
+    // truncated or empty reply with nothing left over for visible text.
+    assert.ok(seen.body.max_tokens >= 4096, `max_tokens was ${seen.body.max_tokens}, too low to leave room for both thinking and an answer`);
 
     // The system prompt carries the house rule and a labelled, parseable
     // data block — not just loose prose the model has to infer structure from.
@@ -158,6 +162,52 @@ test('askCoach treats an empty reply as an error rather than returning nothing',
   try {
     await assert.rejects(askCoach([{ role: 'user', content: 'hi' }]), CoachError);
   } finally {
+    restoreFetch();
+  }
+});
+
+// Regression coverage for the exact failure reported in the field: a reply
+// that just stops mid-sentence, or comes back empty — both traced to
+// thinking (on by default on current models, drawn from the same max_tokens
+// budget) leaving little or nothing for the visible answer.
+test('askCoach logs a diagnosable warning when the model hits max_tokens, rather than returning the cut-off text silently', async () => {
+  await setSetting('anthropic_api_key', 'test-key-123');
+  mockFetch(async () =>
+    new Response(
+      JSON.stringify({
+        content: [{ type: 'text', text: 'The 5.2h this week isn\'t a mislabeled recovery week — it\'s the plan respecting the ramp cap after two disrupted weeks, and the "8' }],
+        model: 'claude-sonnet-5',
+        stop_reason: 'max_tokens',
+      }),
+      { status: 200 }
+    )
+  );
+  const realWarn = console.warn;
+  const warnings = [];
+  console.warn = (...args) => warnings.push(args.join(' '));
+  try {
+    const res = await askCoach([{ role: 'user', content: 'why is this week so short?' }]);
+    assert.ok(res.text.startsWith('The 5.2h this week'), 'the (truncated) text should still be returned, not swallowed');
+    assert.ok(warnings.some((w) => w.includes('max_tokens')), 'expected a diagnosable warning logged for a max_tokens cutoff');
+  } finally {
+    console.warn = realWarn;
+    restoreFetch();
+  }
+});
+
+test('askCoach warns on an empty reply caused by max_tokens too, before raising the error', async () => {
+  await setSetting('anthropic_api_key', 'test-key-123');
+  mockFetch(async () =>
+    new Response(JSON.stringify({ content: [], model: 'claude-sonnet-5', stop_reason: 'max_tokens' }), { status: 200 })
+  );
+  const realWarn = console.warn;
+  const warnings = [];
+  console.warn = (...args) => warnings.push(args.join(' '));
+  try {
+    await assert.rejects(askCoach([{ role: 'user', content: 'hi' }]), CoachError);
+    assert.ok(warnings.some((w) => w.includes('max_tokens') && w.includes('empty')), 'expected the warning to call out that the reply came back empty');
+  } finally {
+    console.warn = realWarn;
     restoreFetch();
   }
 });

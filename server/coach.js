@@ -32,7 +32,12 @@ export class CoachError extends Error {
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
-const MAX_TOKENS = 1200;
+// Current-generation models (Sonnet 5 included) think by default even with no
+// `thinking` param sent — and those tokens are drawn from max_tokens, not a
+// separate budget. At 1200 this was routinely leaving nothing for the actual
+// answer: replies cut off a sentence in, or came back empty when thinking
+// alone used the whole allowance. 4096 leaves real headroom for both.
+const MAX_TOKENS = 4096;
 // Independent of the client's "New question" reset — a defensive ceiling so
 // one runaway conversation can't quietly become an unbounded, ever-more-
 // expensive request no matter what the UI does.
@@ -319,6 +324,17 @@ export async function askCoach(messages) {
     .map((b) => b.text)
     .join('\n')
     .trim();
+
+  // A visibly cut-off or empty reply with stop_reason "max_tokens" means the
+  // budget ran out — possibly to thinking, which draws from the same pool and
+  // isn't shown here. Logged rather than silently returned as if it were a
+  // complete answer, so a recurrence is diagnosable instead of just looking
+  // like the model trailed off on its own.
+  if (data?.stop_reason === 'max_tokens') {
+    console.warn(
+      `[coach] hit max_tokens (${MAX_TOKENS}) for model ${model} — reply was ${reply ? `truncated (${reply.length} chars)` : 'empty'}. Consider raising MAX_TOKENS further.`
+    );
+  }
 
   if (!reply) throw new CoachError('Anthropic returned an empty response.', 502);
 
