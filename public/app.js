@@ -44,6 +44,8 @@ const esc = (s) =>
 
 const fmt = (v, dp = 0) => (v == null || Number.isNaN(v) ? '—' : Number(v).toFixed(dp));
 const sgn = (v, dp = 0) => (v == null ? '—' : (v > 0 ? '+' : '') + Number(v).toFixed(dp));
+const verdictIcon = (severity) =>
+  severity === 'critical' ? '🔴' : severity === 'warn' ? '🟠' : severity === 'good' ? '🟢' : '🔵';
 
 function showTooltip(evt, html) {
   tooltip.innerHTML = html;
@@ -353,6 +355,23 @@ views['/brief'] = async () => {
     );
   }
 
+  const lastWeekVerdict = m.lastWeekVerdict;
+  if (lastWeekVerdict) {
+    root.append(
+      el(
+        'div.card',
+        {},
+        el('h3', {}, 'Last week'),
+        el(
+          `div.flag.${lastWeekVerdict.severity}`,
+          {},
+          el('span.icon', {}, verdictIcon(lastWeekVerdict.severity)),
+          el('div', {}, lastWeekVerdict.text)
+        )
+      )
+    );
+  }
+
   if (brief.flags?.length) {
     const shown = brief.flags.filter((f) => f.severity !== 'good');
     if (shown.length) {
@@ -593,10 +612,11 @@ function noticeWithAction(n, goalId) {
 let openWeek = null;
 
 views['/plan'] = async () => {
-  const [plan, weeks, fitness] = await Promise.all([
+  const [plan, weeks, fitness, brief] = await Promise.all([
     api('/api/plan'),
     api('/api/metrics/weeks?n=14'),
     api('/api/metrics/fitness?days=180'),
+    api('/api/brief').catch(() => null),
   ]);
   const root = el('div');
   if (!plan.goal) return el('div.notice', {}, 'No goal yet. ', el('a', { href: '#/goals' }, 'Create one'), '.');
@@ -635,6 +655,13 @@ views['/plan'] = async () => {
   root.append(el('div.card', {}, el('h3', {}, 'Planned vs actual weekly TSS'), plannedActualChart(weeks)));
 
   const cur = plan.weeks.find((w) => w.start_date <= todayStr() && w.end_date >= todayStr());
+  // The weekly brief already worked out the live coaching call for whichever
+  // week is "now" — carry it onto that week so browsing the plan gives the
+  // same opinion without a trip to /brief.
+  if (cur && brief?.weekStart === cur.start_date) {
+    cur.liveDirective = brief.metrics?.directive || null;
+    cur.liveActions = brief.actions || [];
+  }
   const table = el('table.data');
   table.append(
     el(
@@ -660,6 +687,7 @@ views['/plan'] = async () => {
       el(
         'td.num',
         {},
+        w.verdict ? el('span', { title: w.verdict.text }, verdictIcon(w.verdict.severity), ' ') : null,
         w.actual ? fmt(w.actual.tss) : '—',
         w.comparison?.tssPct != null ? el('div.muted', {}, `${w.comparison.tssPct}%`) : null
       )
@@ -760,8 +788,32 @@ function weekDetail(w) {
           )
         ),
         w.constraint ? constraintBanner(w.constraint) : null,
-        el('p', {}, w.focus || ''),
+        w.liveDirective
+          ? el(
+              `div.flag.${w.liveDirective.severity}`,
+              {},
+              el('span.icon', {}, verdictIcon(w.liveDirective.severity)),
+              el(
+                'div',
+                {},
+                el('div.title', {}, w.liveDirective.headline),
+                el('div', {}, w.liveDirective.text),
+                w.liveActions?.length
+                  ? el('ul', { style: 'margin:6px 0 0' }, w.liveActions.map((a) => el('li', {}, a)))
+                  : null
+              )
+            )
+          : el('p', {}, w.focus || ''),
+        w.liveDirective && w.focus ? el('p.muted', {}, w.focus) : null,
         w.notes ? el('p.muted', {}, w.notes) : null,
+        w.verdict
+          ? el(
+              `div.flag.${w.verdict.severity}`,
+              {},
+              el('span.icon', {}, verdictIcon(w.verdict.severity)),
+              el('div', {}, el('div.title', {}, 'How this week went'), el('div', {}, w.verdict.text))
+            )
+          : null,
         el(
           'ul',
           {},
@@ -949,11 +1001,13 @@ function weekDetail(w) {
 }
 
 views['/log'] = async () => {
-  const [acts, dailyLogs, fuelling] = await Promise.all([
+  const [acts, dailyLogs, fuelling, debriefs] = await Promise.all([
     api('/api/activities?days=45'),
     api('/api/daily-logs?days=90'),
     api('/api/metrics/fuelling'),
+    api('/api/activities/debriefs?days=45').catch(() => []),
   ]);
+  const debriefById = new Map(debriefs.map((d) => [d.activityId, d]));
   const root = el('div');
   root.append(
     el(
@@ -975,7 +1029,7 @@ views['/log'] = async () => {
     el(
       'thead',
       {},
-      el('tr', {}, ['Date', 'Activity', 'IF', 'VI', 'TSS', 'h', 'Position', 'Back pain', 'RPE', 'Notes', '', ''].map((h) => el('th', {}, h)))
+      el('tr', {}, ['Date', 'Activity', 'IF', 'VI', 'TSS', 'h', 'Position', 'Back pain', 'RPE', 'Notes', "Coach's take", '', ''].map((h) => el('th', {}, h)))
     )
   );
   const tb = el('tbody');
@@ -1016,7 +1070,21 @@ views['/log'] = async () => {
       },
     }, 'Save');
 
-    const debriefCell = el('td', { colspan: 12 }, el('span.muted', {}, 'Loading…'));
+    const coach = debriefById.get(a.id);
+    const coachCell = coach
+      ? el(
+          'td',
+          { title: coach.headline },
+          coach.severity ? verdictIcon(coach.severity) + ' ' : '',
+          el(
+            'span.muted',
+            { style: 'display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle' },
+            coach.headline
+          )
+        )
+      : el('td', {}, el('span.muted', {}, '—'));
+
+    const debriefCell = el('td', { colspan: 13 }, el('span.muted', {}, 'Loading…'));
     const debriefRow = el('tr', { style: 'display:none' }, debriefCell);
     let debriefLoaded = false;
     const debriefBtn = el('button.ghost', {
@@ -1052,6 +1120,7 @@ views['/log'] = async () => {
         el('td', {}, painSel),
         el('td', {}, rpe),
         el('td', {}, notes),
+        coachCell,
         el('td', {}, save),
         el('td', {}, debriefBtn)
       ),
