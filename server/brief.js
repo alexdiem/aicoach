@@ -628,8 +628,13 @@ export function redsScreen(fuel, fit, weeks8) {
   if (fuel.hrvChangePct != null && fuel.hrvChangePct <= -8) {
     markers.push(`HRV ${signed(fuel.hrvChangePct)}%`);
   }
-  if (fuel.hasIntakeData && fuel.intakeMean != null && loadChange > 15) {
-    markers.push(`logged intake flat at ${fuel.intakeMean} kcal/day while load rose ${round(loadChange, 0)}%`);
+  // Only counts as evidence about *current* fuelling if the logging actually
+  // covers the period load rose in. Someone who logged the first half of the
+  // window and then stopped has no data about now — that's a gap, not a
+  // "flat" trend, and asserting flatness from a stale mean would be reading
+  // the wrong thing into a missing log.
+  if (fuel.hasIntakeData && fuel.intakeMean != null && loadChange > 15 && fuel.intakeLateN >= 3) {
+    markers.push(`logged intake averaged ${fuel.intakeMean} kcal/day while load rose ${round(loadChange, 0)}%`);
   }
   if (!markers.length) return null;
 

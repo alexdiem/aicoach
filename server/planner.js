@@ -416,7 +416,13 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
   const weeks = [];
   let ctl = startCtl;
   let lastLoadingTss = startWeekly;
-  let peakLoadingTss = startWeekly;
+  // Proven capacity is a best, not an average: a single loading week the
+  // athlete actually carried and came out the other side of is what "already
+  // proven" means, not a mean that a cautious week can drag down. Seeding it
+  // from the mean would understate someone who, say, hit 8.5h once against a
+  // typical 6h — that overshoot is exactly the evidence the ramp should be
+  // allowed to trust once it's ready to climb back to it.
+  let peakLoadingTss = Math.max(startWeekly, adapt.actualWeeklyMax || 0);
   let blockIndex = 1;
   let weekInBlock = 1;
 
@@ -474,12 +480,29 @@ export async function generatePlan(goalId, { reason = 'manual', from = null, asO
       const cap = phase.startsWith('base') || phase === 'prep' ? maxRampBase : maxRampBuild;
       const wanted = clamp(gap / remainingRamp, -2, cap);
       // ΔCTL per week r requires weekly TSS = 7 × (CTL + 6r)  (from the 42-day EWMA)
-      targetTss = round(7 * (ctl + 6 * wanted), 0);
-      // Friel: no more than ~10% week-on-week volume increase inside a block.
-      targetTss = Math.min(targetTss, round(lastLoadingTss * 1.1, 0));
-      // and never above what the event actually justifies
-      targetTss = Math.min(targetTss, round(pkHours * tph, 0));
-      targetTss = Math.max(targetTss, round(ctl * 7 * 0.8, 0));
+      const rawTargetTss = round(7 * (ctl + 6 * wanted), 0);
+      const eventCap = round(pkHours * tph, 0);
+      const floorTss = round(ctl * 7 * 0.8, 0);
+      // Friel: no more than ~10% week-on-week volume increase inside a block —
+      // but that throttle is for pushing into load the athlete hasn't already
+      // proven they can carry. A week pulled back to smooth an overshoot or
+      // manage TSB isn't a measurement of capacity, so it shouldn't reset how
+      // fast the ramp is allowed to climb back to a load recently carried and
+      // recovered from (peakLoadingTss) — only load above that recent peak
+      // gets the 10%/week throttle. Under genuine under-recovery (EF collapse),
+      // this relaxation is switched off: that signal means the recent peak
+      // wasn't actually absorbed well, so it shouldn't be a fast-return target.
+      const woWCap = round(lastLoadingTss * 1.1, 0);
+      const strictTss = clamp(Math.min(rawTargetTss, woWCap, eventCap), floorTss, Infinity);
+      const rampCeiling = adapt.underRecovery ? woWCap : Math.max(woWCap, Math.min(peakLoadingTss, rawTargetTss));
+      targetTss = clamp(Math.min(rawTargetTss, rampCeiling, eventCap), floorTss, Infinity);
+      if (targetTss > strictTss) {
+        governing.push({
+          decision: 'ramp: return to proven load',
+          framework: 'Friel',
+          reason: `The 10%/week climb would have held this week to ${strictTss} TSS, but ${round(Math.min(peakLoadingTss, rawTargetTss), 0)} TSS was already carried and recovered from recently (recent peak loading week: ${round(peakLoadingTss, 0)} TSS) — that's a return to proven load, not a new spike, so the 10%/week throttle only applies above it.`,
+        });
+      }
     }
 
     // A week the athlete has declared constrained is capped at what they said
@@ -716,6 +739,7 @@ export async function complianceWindow(weeks) {
   const excluded = weeks.length - counted.length;
 
   const actualWeeklyMean = round(mean(counted.map((w) => w.tss || 0)), 0);
+  const actualWeeklyMax = counted.length ? round(Math.max(...counted.map((w) => w.tss || 0)), 0) : 0;
 
   const plannedRows = await Promise.all(
     counted.map((w) =>
@@ -733,6 +757,7 @@ export async function complianceWindow(weeks) {
 
   return {
     actualWeeklyMean,
+    actualWeeklyMax,
     plannedWeeklyMean: plannedMean,
     compliancePct,
     complianceWeeks: planned.length,
