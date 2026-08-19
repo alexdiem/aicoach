@@ -187,10 +187,15 @@ export async function buildBrief({ goalId = null, asOf = today() } = {}) {
   }
 
   // ------------------------------------------------- plan vs actual last week
+  // Kept out of `flags` deliberately: flags are filtered to non-'good' in the
+  // UI (they're for things that need attention), but the read on how last
+  // week actually went is the answer to a question the athlete always asked,
+  // not just when the answer is bad — a clean week deserves "this is the week
+  // to repeat" just as much as a blown one deserves a warning.
+  let lastWeekVerdict = null;
   if (comparison) {
-    const verdict = evaluateCompliance(comparison, lastPlanWeek, adapt, lastConstraint);
-    flags.push({ id: 'compliance', severity: verdict.severity, title: 'Last week: planned vs actual', text: verdict.text, numbers: comparison });
-    if (verdict.action) actions.push(verdict.action);
+    lastWeekVerdict = evaluateCompliance(comparison, lastPlanWeek, adapt, lastConstraint);
+    if (lastWeekVerdict.action) actions.push(lastWeekVerdict.action);
   }
 
   // ------------------------------------------------------ declared constraint
@@ -247,9 +252,17 @@ export async function buildBrief({ goalId = null, asOf = today() } = {}) {
     ef: { recent: ef.recentMean, baseline: ef.baselineMean, changePct: ef.changePct, reliable: ef.reliable },
     daysToEvent: goal ? daysBetween(asOf, goal.event_date) : null,
     lastWeek: comparison,
+    // Embedded here (not just top-level) because metrics_json is the one blob
+    // saveBrief persists — a stored/hydrated brief needs this to survive a
+    // page reload, not just the freshly-computed one.
+    lastWeekVerdict,
+    // Same reason: the /plan page wants the full coaching call for the week
+    // it's currently showing, not just the one-line headline that was already
+    // top-level.
+    directive: { headline: directive.headline, text: directive.text, severity: directive.severity, framework: directive.framework },
   };
 
-  const body = renderMarkdown({ goal, thisWeek: week, ws, directive, flags, actions, governing, metrics, comparison, adjustment });
+  const body = renderMarkdown({ goal, thisWeek: week, ws, directive, flags, actions, governing, metrics, comparison, adjustment, lastWeekVerdict });
 
   return {
     goalId: goal?.id ?? null,
@@ -656,7 +669,7 @@ export function proteinFlag(fuel, athlete, weekTargetTss = null) {
   };
 }
 
-function renderMarkdown({ goal, thisWeek, ws, directive, flags, actions, governing, metrics, comparison, adjustment }) {
+function renderMarkdown({ goal, thisWeek, ws, directive, flags, actions, governing, metrics, comparison, adjustment, lastWeekVerdict }) {
   const L = [];
   const phaseLabel = thisWeek
     ? `${thisWeek.phase}${thisWeek.is_recovery ? ' · recovery week' : ''} · week ${thisWeek.week_in_block} of block ${thisWeek.block_index}`
@@ -735,6 +748,11 @@ function renderMarkdown({ goal, thisWeek, ws, directive, flags, actions, governi
   if (comparison) {
     L.push('## Last week: planned vs actual');
     L.push('');
+    if (lastWeekVerdict) {
+      const tag = lastWeekVerdict.severity === 'critical' ? '🔴' : lastWeekVerdict.severity === 'warn' ? '🟠' : lastWeekVerdict.severity === 'good' ? '🟢' : '🔵';
+      L.push(`${tag} ${lastWeekVerdict.text}`);
+      L.push('');
+    }
     L.push('| | Planned | Actual | Δ |');
     L.push('| --- | --- | --- | --- |');
     L.push(`| TSS | ${comparison.plannedTss} | ${comparison.actualTss} | ${signed(comparison.tssDelta)} |`);

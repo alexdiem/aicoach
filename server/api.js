@@ -13,7 +13,7 @@ import {
   generatePlan, savePlan, activePlan, planWeeks, weekForDate, activeGoal, regenerate, estimateDuration,
   durationClass, adaptationInputs, listConstraints, setConstraint, clearConstraint, constraintMap,
 } from './planner.js';
-import { buildBrief, saveBrief, getBrief, listBriefs, runWeekly, redsScreen, proteinFlag } from './brief.js';
+import { buildBrief, saveBrief, getBrief, listBriefs, runWeekly, redsScreen, proteinFlag, evaluateCompliance } from './brief.js';
 import { buildWorkoutDebrief } from './debrief.js';
 import { dailyReadiness } from './readiness.js';
 import { painCorrelation, upsertRideLog, loggedRides, recentPain } from './backpain.js';
@@ -224,8 +224,12 @@ export const routes = {
       governing: safeJson(w.governing_json) || [],
       constraint: constraints.get(w.start_date) || null,
     }));
-    // Attach actuals for weeks that have already happened.
+    // Attach actuals — and an opinionated verdict on them — for every week
+    // that has already happened, not just the most recent one. Without this,
+    // browsing the plan only ever shows the coach's read on last week; every
+    // earlier week sits there as bare numbers.
     const cur = weekStart(today());
+    const adapt = await adaptationInputs();
     await Promise.all(
       weeks
         .filter((w) => w.start_date <= cur)
@@ -233,6 +237,11 @@ export const routes = {
           const a = await weekActuals(w.start_date);
           w.actual = { tss: a.tss, hours: a.hours, sessions: a.sessions, distribution: a.distribution };
           w.comparison = compareWeek(w, a);
+          // Only a week that's actually over gets graded — the current week is
+          // still being lived, and reading partial actuals as a shortfall
+          // would be a false "you missed most of the week" mid-week.
+          if (w.start_date < cur) w.verdict = evaluateCompliance(w.comparison, w, adapt, w.constraint);
+
         })
     );
     return {
@@ -362,6 +371,21 @@ export const routes = {
     const debrief = await buildWorkoutDebrief(params.id);
     if (!debrief) throw httpError(404, 'activity not found');
     return debrief;
+  },
+
+  // One-line coach's take per session, for every activity in range at once —
+  // so the log table can show an opinion on each ride without the athlete
+  // having to click into every row's full debrief to get one.
+  'GET /api/activities/debriefs': async ({ query }) => {
+    const to = query.to || today();
+    const from = query.from || addDays(to, -parseInt(query.days || '45', 10));
+    const acts = await activitiesBetween(from, to);
+    const debriefs = await Promise.all(acts.map((a) => buildWorkoutDebrief(a.id)));
+    return debriefs.filter(Boolean).map((d) => ({
+      activityId: d.activityId,
+      headline: d.headline,
+      severity: d.flags[0]?.severity || null,
+    }));
   },
 
   'POST /api/ride-logs': async ({ body }) => {

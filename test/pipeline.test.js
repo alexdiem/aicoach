@@ -22,6 +22,7 @@ const brief = await import('../server/brief.js');
 const backpain = await import('../server/backpain.js');
 const { normaliseActivity, parseTags } = await import('../server/sync.js');
 const intervalsClient = await import('../server/intervals.js');
+const api = await import('../server/api.js');
 
 process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
 
@@ -278,6 +279,23 @@ test('brief contains no filler advice', async () => {
   }
   // Every action must contain at least one digit.
   for (const a of b.actions) assert.match(a, /\d/, `action without a number: ${a}`);
+});
+
+test('the last-week verdict and this-week directive survive outside the severity-filtered flags list', async () => {
+  const b = await brief.buildBrief({ goalId, asOf: TODAY });
+  // Neither belongs in `flags` any more: flags are filtered to non-'good' in
+  // the UI, and both of these need to read even on a clean week.
+  assert.ok(!b.flags.some((f) => f.id === 'compliance'), 'compliance verdict should not live in the flags list');
+  assert.ok(b.metrics.directive, 'expected a directive on metrics');
+  assert.equal(b.metrics.directive.headline, b.headline);
+  assert.ok(b.metrics.directive.text.length > 0);
+  // lastWeekVerdict is only present once there's a comparable prior week —
+  // this athlete has one from the earlier tests in this file.
+  if (b.metrics.lastWeek) {
+    assert.ok(b.metrics.lastWeekVerdict);
+    assert.ok(b.metrics.lastWeekVerdict.text.length > 0);
+    assert.match(b.body, /Last week: planned vs actual/);
+  }
 });
 
 test('EF decline at matched IF while load rises reads as under-recovery', async () => {
@@ -754,4 +772,58 @@ test('evaluateCompliance: a verdict per tier, not just a percentage', () => {
   const shortLong = brief.evaluateCompliance(makeComparison({ pct: 100, longDeltaHours: -1.5 }), { is_recovery: 0 }, null);
   assert.equal(shortLong.severity, 'warn');
   assert.match(shortLong.action, /long session/i);
+});
+
+test('GET /api/plan grades every past week, not just the most recent one', async () => {
+  // Needs a goal that started weeks ago, so the plan actually has weeks
+  // before "today" to grade — the shared `goalId` goal above starts today.
+  const info = await db
+    .prepare(
+      `INSERT INTO goals (name, kind, sport, event_date, start_date, priority, support, status, created_at)
+       VALUES ('Past-weeks verdict test','event','Ride',?,?,'A','supported','active',?)`
+    )
+    .run(addDays(TODAY, 7 * 20), addDays(TODAY, -7 * 4), new Date().toISOString());
+  const pastGoalId = Number(info.lastInsertRowid);
+  const generated = await planner.generatePlan(pastGoalId, { reason: 'plan-verdict-test' });
+  await planner.savePlan(generated);
+  const cur = weekStart(TODAY);
+  const rows = (await planner.planWeeks((await planner.activePlan(pastGoalId)).id))
+    .filter((w) => w.start_date < cur)
+    .slice(0, 3);
+  assert.ok(rows.length >= 3, 'expected at least three completed weeks to grade');
+
+  await db.exec('DELETE FROM activities');
+  // First past week: rode almost none of it. Second: dead on target.
+  await seedActivity({ date: rows[0].start_date, tss: Math.round(rows[0].target_tss * 0.1), intensity: 0.6 });
+  await seedActivity({ date: addDays(rows[1].start_date, 1), tss: rows[1].target_tss, intensity: 0.65 });
+
+  const res = await api.routes['GET /api/plan']({ query: { goalId: String(pastGoalId) } });
+  const w0 = res.weeks.find((w) => w.start_date === rows[0].start_date);
+  const w1 = res.weeks.find((w) => w.start_date === rows[1].start_date);
+  const curWeek = res.weeks.find((w) => w.start_date === cur);
+
+  assert.ok(w0.verdict, 'a badly-missed past week should carry a verdict');
+  assert.equal(w0.verdict.severity, 'warn');
+  // Hit the TSS target exactly — on-target TSS is graded 'good' unless the
+  // zone split also drifted from plan, so just require a real, non-empty
+  // verdict here rather than pinning a severity the seeded zone mix doesn't
+  // control (evaluateCompliance's own tiers are covered exhaustively above).
+  assert.ok(w1.verdict, 'an on-target past week should also carry a verdict');
+  assert.ok(w1.verdict.text.length > 0);
+  // The week still being lived isn't graded — partial actuals would misread
+  // as a shortfall mid-week.
+  assert.ok(!curWeek?.verdict, 'the current, still-in-progress week should not be graded');
+});
+
+test('GET /api/activities/debriefs returns a one-line coach take per activity in one round trip', async () => {
+  await db.exec('DELETE FROM activities');
+  await seedActivity({ date: TODAY, tss: 150, intensity: 0.7, name: 'Steady ride' });
+  await seedActivity({ date: addDays(TODAY, -1), tss: 80, intensity: 0.6, name: 'Recovery spin' });
+
+  const res = await api.routes['GET /api/activities/debriefs']({ query: { days: '7' } });
+  assert.equal(res.length, 2);
+  for (const d of res) {
+    assert.ok(d.activityId);
+    assert.ok(d.headline.length > 0);
+  }
 });
