@@ -533,6 +533,18 @@ test('a constrained week is excluded from the compliance window that drives futu
   await planner.clearConstraint(travelWs);
 });
 
+test('complianceWindow: proven capacity is the best recent week, not an average a cautious week can drag down', async () => {
+  const window = [
+    { weekStart: '2026-01-05', tss: 350 },
+    { weekStart: '2026-01-12', tss: 360 },
+    { weekStart: '2026-01-19', tss: 418 }, // the one week that actually proved a higher capacity
+    { weekStart: '2026-01-26', tss: 268 }, // a soft week shouldn't erase that proof
+  ];
+  const c = await planner.complianceWindow(window);
+  assert.equal(c.actualWeeklyMax, 418, 'expected the single best week, not a mean diluted by the softer ones');
+  assert.ok(c.actualWeeklyMax > c.actualWeeklyMean, 'the max should sit above the mean once one week outperforms the rest');
+});
+
 test('a declared week is not graded as a shortfall', async () => {
   const comparison = {
     actualTss: 90, actualHours: 3, plannedTss: 600, tssPct: 15,
@@ -695,6 +707,23 @@ test('proteinFlag: fires on a genuine shortfall, stays quiet on thin data or no 
   assert.equal(brief.proteinFlag(onTarget, athlete), null, 'on-target protein should not flag');
   assert.equal(brief.proteinFlag(thinData, athlete), null, 'fewer than 5 logged days should not flag');
   assert.equal(brief.proteinFlag(shortfall, {}), null, 'no athlete weight on file should not flag');
+});
+
+test('redsScreen: intake logged earlier in the window but not recently is a gap, not a false "flat" claim', () => {
+  // 4-week load up 50% — enough to make the screen look for a fuelling signal.
+  const weeks8 = [{ tss: 300 }, { tss: 300 }, { tss: 300 }, { tss: 300 }, { tss: 450 }, { tss: 450 }, { tss: 450 }, { tss: 450 }];
+
+  // Logged the first half of the 28-day window, then stopped — no evidence
+  // about intake during the load rise itself.
+  const stale = { hasIntakeData: true, intakeMean: 2381, intakeLateN: 0, weightChangePct: null, rhrChange: null, hrvChangePct: null, days: 28 };
+  assert.equal(brief.redsScreen(stale, null, weeks8), null, 'a stale intake mean must not be read as evidence about current fuelling');
+
+  // Same mean, but the logging actually covers the recent, higher-load half.
+  const recent = { ...stale, intakeLateN: 5 };
+  const flag = brief.redsScreen(recent, null, weeks8);
+  assert.ok(flag, 'expected a flag once logging actually covers the load-rise period');
+  assert.match(flag.text, /averaged 2381 kcal\/day/);
+  assert.doesNotMatch(flag.text, /\bflat\b/, 'must not claim a flat trend it never checked for');
 });
 
 function makeComparison({ pct, plannedTss = 400, actualHours = 8, plannedHours = 8, skew = 0, longDeltaHours = 0, longPlannedHours = 3 } = {}) {

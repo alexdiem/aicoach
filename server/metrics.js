@@ -349,9 +349,25 @@ export async function fuellingSignals(date = today(), days = 28) {
   const hrvEarly = mean(w.slice(0, half).map((r) => r.hrv));
   const hrvLate = mean(w.slice(half).map((r) => r.hrv));
 
-  const intake = logs.map((r) => r.intake_kcal).filter((x) => x != null);
-  const wellnessIntake = w.map((r) => r.kcal_consumed).filter((x) => x != null);
+  const intakeRows = logs
+    .map((r) => ({ date: r.date, kcal: r.intake_kcal }))
+    .filter((r) => r.kcal != null);
+  const wellnessIntakeRows = w
+    .map((r) => ({ date: r.date, kcal: r.kcal_consumed }))
+    .filter((r) => r.kcal != null);
+  const rows = intakeRows.length ? intakeRows : wellnessIntakeRows;
+  const intake = rows.map((r) => r.kcal);
   const protein = logs.map((r) => r.protein_g).filter((x) => x != null);
+
+  // Recency, not just a window mean: a plan-vs-actual comparison against
+  // rising load only means something if the logging actually covers the
+  // period load rose in. Someone who logged for the first two weeks of a
+  // 4-week window and then stopped has zero evidence about current intake —
+  // that's a gap, not a "flat" trend, and the two must not be conflated.
+  const lateFrom = addDays(date, -Math.ceil(days / 2) + 1);
+  const intakeLateN = rows.filter((r) => r.date >= lateFrom).length;
+  const lastLoggedDate = rows.length ? rows[rows.length - 1].date : null;
+  const intakeDaysSinceLog = lastLoggedDate != null ? daysBetween(lastLoggedDate, date) : null;
 
   return {
     days,
@@ -360,10 +376,12 @@ export async function fuellingSignals(date = today(), days = 28) {
     rhrChange: round((rhrLate ?? 0) - (rhrEarly ?? 0), 1),
     rhrLate: round(rhrLate, 0),
     hrvChangePct: round(pctChange(hrvLate, hrvEarly), 1),
-    intakeMean: round(mean(intake.length ? intake : wellnessIntake), 0),
-    intakeN: intake.length || wellnessIntake.length,
+    intakeMean: round(mean(intake), 0),
+    intakeN: intake.length,
+    intakeLateN,
+    intakeDaysSinceLog,
     proteinMean: round(mean(protein), 0),
     proteinN: protein.length,
-    hasIntakeData: (intake.length || wellnessIntake.length) >= 5,
+    hasIntakeData: intake.length >= 5,
   };
 }
