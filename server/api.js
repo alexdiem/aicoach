@@ -18,12 +18,17 @@ import { buildWorkoutDebrief } from './debrief.js';
 import { dailyReadiness } from './readiness.js';
 import { painCorrelation, upsertRideLog, loggedRides, recentPain } from './backpain.js';
 import { authEnabled, checkPassword, createSessionCookie, clearSessionCookie } from './auth.js';
+import { askCoach } from './coach.js';
 
 const MASK = '••••••••';
 
 async function maskedSettings() {
   const s = await allSettings();
-  return { ...s, intervals_api_key: s.intervals_api_key ? MASK : '' };
+  return {
+    ...s,
+    intervals_api_key: s.intervals_api_key ? MASK : '',
+    anthropic_api_key: s.anthropic_api_key ? MASK : '',
+  };
 }
 
 async function requireGoal(query) {
@@ -47,11 +52,12 @@ export const routes = {
 
   'GET /api/status': async () => {
     const goal = await activeGoal();
-    const [plan, fit, settings, hasApiKey, athlete, sync, actCount, rideCount, briefCount, jobFailures] = await Promise.all([
+    const [plan, fit, settings, hasApiKey, hasCoachKey, athlete, sync, actCount, rideCount, briefCount, jobFailures] = await Promise.all([
       goal ? activePlan(goal.id) : null,
       currentFitness(),
       maskedSettings(),
       getSetting('intervals_api_key'),
+      getSetting('anthropic_api_key'),
       getAthlete(),
       lastSync(),
       db.prepare('SELECT COUNT(*) c FROM activities').get(),
@@ -63,6 +69,7 @@ export const routes = {
     return {
       settings,
       hasApiKey: !!hasApiKey,
+      hasCoachKey: !!hasCoachKey,
       athlete,
       lastSync: sync,
       jobFailures,
@@ -77,8 +84,9 @@ export const routes = {
   'GET /api/settings': async () => maskedSettings(),
 
   'POST /api/settings': async ({ body }) => {
+    const maskedKeys = new Set(['intervals_api_key', 'anthropic_api_key']);
     for (const [k, v] of Object.entries(body || {})) {
-      if (k === 'intervals_api_key' && (v === MASK || v === '')) continue; // don't clobber with the mask
+      if (maskedKeys.has(k) && (v === MASK || v === '')) continue; // don't clobber with the mask
       await setSetting(k, v);
     }
     return maskedSettings();
@@ -413,6 +421,14 @@ export const routes = {
     }),
 
   'GET /api/backpain/events': async ({ query }) => recentPain({ days: parseInt(query.days || '90', 10) }),
+
+  // --- coach chat --------------------------------------------------------
+  // Stateless: the client owns the conversation and sends the whole thing
+  // back each time, ending in the newest question. The coaching-data snapshot
+  // is rebuilt fresh on every call inside askCoach, not carried in the
+  // conversation, so a long chat doesn't pay to re-send it and doesn't answer
+  // off numbers that have since moved.
+  'POST /api/coach/ask': async ({ body }) => askCoach(body?.messages),
 
   'GET /api/daily-logs': async ({ query }) => {
     const to = query.to || today();

@@ -423,6 +423,8 @@ const DEFAULTS = {
   max_ramp_base: '6',
   max_ramp_build: '4',
   strength_sessions_per_week: '2',
+  anthropic_api_key: '',
+  coach_model: 'claude-sonnet-5',
 };
 
 export async function getSetting(key, fallback = null) {

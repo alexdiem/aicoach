@@ -252,6 +252,27 @@ Sims rule — recorded in "Framework calls" as `Personal`.
 | Shape of intensity within a week (polarized vs. pyramidal) | **Sims** | Friel's model is pyramidal — real time in the 76–93% FTP gray zone through base and build. Sims' polarized model holds that zone near-empty at every phase instead. |
 | Phase sequence, ramp rate, recovery weeks, taper length | **Friel** | The periodization structure itself. |
 
+## Ask your coach
+
+A chat on the **Coach** tab, for questions that don't fit a fixed screen — "should I
+still do Saturday's long ride", "why does my back hurt more lately", "what's actually
+driving this week's cut". It's not a general chatbot: the system prompt restricts it to
+arguing from a snapshot of exactly what the rest of this app already knows (this week's
+brief, the surrounding plan weeks, recent rides, readiness, back-pain correlation) and
+carries the same house rule as every other screen — every recommendation names the
+number that drove it, and "I don't have that data" beats a vague, generic answer.
+
+The snapshot is rebuilt fresh on every question rather than fixed at the start of the
+conversation, so a long chat doesn't answer off numbers that have since moved, and
+doesn't pay to re-send that snapshot as the conversation grows — only the actual
+back-and-forth does that. **New question** clears the conversation client-side when the
+next thing you ask isn't a follow-up, so it doesn't drag unrelated context into a fresh
+topic; the coach has no memory beyond what's currently on screen.
+
+Requires an Anthropic API key (Settings → Ask your coach → console.anthropic.com → API
+Keys) — separate from, and optional independent of, the intervals.icu key the rest of
+the app needs. The model is configurable in the same card (defaults to `claude-sonnet-5`).
+
 ## Stack
 
 Node's built-in HTTP server, vanilla ES-module frontend, inline SVG charts. `node:sqlite`
