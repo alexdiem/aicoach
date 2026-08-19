@@ -1393,6 +1393,113 @@ function goalPreviewNode(f) {
   return preview;
 }
 
+// Conversation state lives here, not in the view function — a view is
+// rebuilt from scratch every time render() runs, but this module-level array
+// survives navigating away and back (same pattern as `openWeek` on /plan).
+// It only ever grows in response to Ask, and only ever resets via "New
+// question" — never as a side effect of switching tabs.
+let coachThread = [];
+
+function coachSetupNotice() {
+  return el(
+    'div.notice',
+    {},
+    'No Anthropic API key yet — the coach chat has no model to talk to. ',
+    el('a', { href: '#/settings' }, 'Add one in Settings'),
+    ' (console.anthropic.com → API Keys).'
+  );
+}
+
+views['/coach'] = async () => {
+  const status = await api('/api/status');
+  const root = el('div');
+
+  root.append(
+    el(
+      'div.card',
+      {},
+      el('h2', {}, 'Ask your coach'),
+      el(
+        'p.muted',
+        {},
+        "Answers are grounded in this week's brief, your plan, recent rides, readiness and back-pain data — refreshed on every question, not just at the start of the chat."
+      )
+    )
+  );
+
+  if (!status.hasCoachKey) root.append(coachSetupNotice());
+  if (!status.goal) {
+    root.append(el('div.notice', {}, 'No active goal yet — the coach can still answer from your logged data, but has no plan to reason about. ', el('a', { href: '#/goals' }, 'Create one'), '.'));
+  }
+
+  const log = el('div.chat-log', { id: 'coach-log' });
+  const input = el('textarea', { placeholder: 'Ask about this week, last week, a specific ride, your back pain pattern, fuelling…', rows: 2 });
+  const askBtn = el('button', {}, 'Ask');
+  const newBtn = el('button.ghost', {}, 'New question');
+  const err = el('p.muted', {});
+
+  function paint(thinking) {
+    const nodes = coachThread.length
+      ? coachThread.map((m) =>
+          el(
+            `div.chat-msg.${m.role}`,
+            {},
+            el('div.chat-role', {}, m.role === 'user' ? 'You' : 'Coach'),
+            m.role === 'assistant' ? el('div.chat-body', { html: markdown(m.content) }) : el('div.chat-body', {}, m.content)
+          )
+        )
+      : [el('p.muted', {}, 'Nothing asked yet.')];
+    if (thinking) {
+      nodes.push(el('div.chat-msg.assistant', {}, el('div.chat-role', {}, 'Coach'), el('div.chat-body.muted', {}, 'Thinking…')));
+    }
+    log.replaceChildren(...nodes);
+    log.scrollTop = log.scrollHeight;
+  }
+  paint(false);
+
+  async function ask() {
+    const text = input.value.trim();
+    if (!text || askBtn.disabled) return;
+    coachThread.push({ role: 'user', content: text });
+    input.value = '';
+    err.textContent = '';
+    askBtn.disabled = true;
+    paint(true);
+    try {
+      const r = await api('/api/coach/ask', { method: 'POST', body: { messages: coachThread } });
+      coachThread.push({ role: 'assistant', content: r.text });
+    } catch (e) {
+      coachThread.pop(); // roll back the failed turn so history stays clean
+      input.value = text; // let them retry without retyping
+      err.textContent = e.message;
+    } finally {
+      askBtn.disabled = false;
+      paint(false);
+    }
+  }
+  askBtn.onclick = ask;
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); }
+  });
+  newBtn.onclick = () => {
+    coachThread = [];
+    err.textContent = '';
+    paint(false);
+  };
+
+  root.append(
+    el(
+      'div.card',
+      {},
+      log,
+      el('div.chat-input-row', {}, input, el('div', { style: 'display:flex;flex-direction:column;gap:6px' }, askBtn, newBtn)),
+      err
+    )
+  );
+
+  return root;
+};
+
 views['/goals'] = async () => {
   const goals = await api('/api/goals');
   const root = el('div');
@@ -1552,6 +1659,43 @@ views['/settings'] = async () => {
           }, 'Save + test')
         ),
         el('div', {}, testOut)
+      )
+    )
+  );
+
+  const coachKey = el('input', { type: 'password', placeholder: status.hasCoachKey ? '•••••••• (stored)' : 'paste API key', style: 'width:100%' });
+  const coachModel = el('input', { type: 'text', value: s.coach_model || 'claude-sonnet-5', style: 'width:220px' });
+  const coachOut = el('span.muted', {});
+  root.append(
+    el(
+      'div.card',
+      {},
+      el('h3', {}, 'Ask your coach'),
+      el('p.muted', {}, 'Anthropic API key for the chat coach on the Coach page. Get one at ', el('a', { href: 'https://console.anthropic.com/settings/keys', target: '_blank', rel: 'noopener' }, 'console.anthropic.com'), '. Stored the same way as the intervals.icu key, and only ever sent to Anthropic.'),
+      el('div', {}, el('label', {}, 'API key'), coachKey),
+      el(
+        'div.row',
+        { style: 'margin-top:10px' },
+        el('div', { style: 'flex:0 0 auto' }, el('label', {}, 'Model'), coachModel),
+        el(
+          'div',
+          { style: 'flex:0 0 auto' },
+          el('button', {
+            onclick: async (e) => {
+              e.target.disabled = true;
+              coachOut.textContent = 'Saving…';
+              try {
+                await api('/api/settings', { method: 'POST', body: { anthropic_api_key: coachKey.value, coach_model: coachModel.value } });
+                coachOut.textContent = '✓ saved';
+              } catch (err) {
+                coachOut.textContent = `✗ ${err.message}`;
+              } finally {
+                e.target.disabled = false;
+              }
+            },
+          }, 'Save')
+        ),
+        el('div', {}, coachOut)
       )
     )
   );
